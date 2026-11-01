@@ -1,0 +1,384 @@
+{
+  "model_name": "Random Forest",
+  "pipeline": "Pipeline A (561 Features)",
+  "train_samples": 5607,
+  "val_samples": 1745,
+  "test_samples": 2947,
+  "train_duration_sec": 1.359,
+  "inference_latency_ms": 0.1375,
+  "validation_metrics": {
+    "model_name": "Random Forest",
+    "accuracy": 0.904297994269341,
+    "macro_f1": 0.9010868622285226,
+    "weighted_f1": 0.9016416186817257,
+    "confusion_matrix": [
+      [
+        208,
+        46,
+        27,
+        0,
+        0,
+        0
+      ],
+      [
+        6,
+        240,
+        1,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        2,
+        229,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        241,
+        59,
+        15
+      ],
+      [
+        0,
+        0,
+        0,
+        10,
+        323,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        1,
+        0,
+        337
+      ]
+    ],
+    "classification_report": {
+      "WALKING": {
+        "precision": 0.9719626168224299,
+        "recall": 0.7402135231316725,
+        "f1-score": 0.8404040404040404,
+        "support": 281.0
+      },
+      "WALKING_UPSTAIRS": {
+        "precision": 0.8333333333333334,
+        "recall": 0.97165991902834,
+        "f1-score": 0.897196261682243,
+        "support": 247.0
+      },
+      "WALKING_DOWNSTAIRS": {
+        "precision": 0.8910505836575876,
+        "recall": 0.9913419913419913,
+        "f1-score": 0.9385245901639344,
+        "support": 231.0
+      },
+      "SITTING": {
+        "precision": 0.9563492063492064,
+        "recall": 0.765079365079365,
+        "f1-score": 0.8500881834215167,
+        "support": 315.0
+      },
+      "STANDING": {
+        "precision": 0.8455497382198953,
+        "recall": 0.96996996996997,
+        "f1-score": 0.9034965034965035,
+        "support": 333.0
+      },
+      "LAYING": {
+        "precision": 0.9573863636363636,
+        "recall": 0.9970414201183432,
+        "f1-score": 0.9768115942028985,
+        "support": 338.0
+      },
+      "accuracy": 0.904297994269341,
+      "macro avg": {
+        "precision": 0.9092719736698026,
+        "recall": 0.9058843647782803,
+        "f1-score": 0.9010868622285226,
+        "support": 1745.0
+      },
+      "weighted avg": {
+        "precision": 0.911863706144215,
+        "recall": 0.904297994269341,
+        "f1-score": 0.9016416186817257,
+        "support": 1745.0
+      }
+    },
+    "num_test_samples": 1745
+  },
+  "test_metrics": {
+    "model_name": "Random Forest",
+    "accuracy": 0.9185612487275195,
+    "macro_f1": 0.9164262252951008,
+    "weighted_f1": 0.9183173585336251,
+    "confusion_matrix": [
+      [
+        470,
+        11,
+        15,
+        0,
+        0,
+        0
+      ],
+      [
+        35,
+        430,
+        6,
+        0,
+        0,
+        0
+      ],
+      [
+        17,
+        49,
+        354,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        421,
+        70,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        37,
+        495,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        537
+      ]
+    ],
+    "classification_report": {
+      "WALKING": {
+        "precision": 0.9003831417624522,
+        "recall": 0.9475806451612904,
+        "f1-score": 0.9233791748526523,
+        "support": 496.0
+      },
+      "WALKING_UPSTAIRS": {
+        "precision": 0.8775510204081632,
+        "recall": 0.9129511677282378,
+        "f1-score": 0.894901144640999,
+        "support": 471.0
+      },
+      "WALKING_DOWNSTAIRS": {
+        "precision": 0.944,
+        "recall": 0.8428571428571429,
+        "f1-score": 0.8905660377358491,
+        "support": 420.0
+      },
+      "SITTING": {
+        "precision": 0.9192139737991266,
+        "recall": 0.8574338085539714,
+        "f1-score": 0.8872497365648051,
+        "support": 491.0
+      },
+      "STANDING": {
+        "precision": 0.8761061946902655,
+        "recall": 0.9304511278195489,
+        "f1-score": 0.902461257976299,
+        "support": 532.0
+      },
+      "LAYING": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 537.0
+      },
+      "accuracy": 0.9185612487275195,
+      "macro avg": {
+        "precision": 0.9195423884433346,
+        "recall": 0.9152123153533651,
+        "f1-score": 0.9164262252951008,
+        "support": 2947.0
+      },
+      "weighted avg": {
+        "precision": 0.9198571854893158,
+        "recall": 0.9185612487275195,
+        "f1-score": 0.9183173585336251,
+        "support": 2947.0
+      }
+    },
+    "num_test_samples": 2947
+  },
+  "top_features": [
+    {
+      "rank": 1,
+      "feature_index": 40,
+      "feature_name": "tGravityAcc-mean()-X",
+      "importance": 0.033856688813491256
+    },
+    {
+      "rank": 2,
+      "feature_index": 558,
+      "feature_name": "angle(X,gravityMean)",
+      "importance": 0.031105375327837664
+    },
+    {
+      "rank": 3,
+      "feature_index": 56,
+      "feature_name": "tGravityAcc-energy()-X",
+      "importance": 0.028285300000430866
+    },
+    {
+      "rank": 4,
+      "feature_index": 41,
+      "feature_name": "tGravityAcc-mean()-Y",
+      "importance": 0.027423192788867366
+    },
+    {
+      "rank": 5,
+      "feature_index": 53,
+      "feature_name": "tGravityAcc-min()-Y",
+      "importance": 0.02717559534784737
+    },
+    {
+      "rank": 6,
+      "feature_index": 49,
+      "feature_name": "tGravityAcc-max()-X",
+      "importance": 0.025228879407535883
+    },
+    {
+      "rank": 7,
+      "feature_index": 559,
+      "feature_name": "angle(Y,gravityMean)",
+      "importance": 0.025150302169236152
+    },
+    {
+      "rank": 8,
+      "feature_index": 52,
+      "feature_name": "tGravityAcc-min()-X",
+      "importance": 0.02310224655075396
+    },
+    {
+      "rank": 9,
+      "feature_index": 50,
+      "feature_name": "tGravityAcc-max()-Y",
+      "importance": 0.019461802074649568
+    },
+    {
+      "rank": 10,
+      "feature_index": 57,
+      "feature_name": "tGravityAcc-energy()-Y",
+      "importance": 0.017280147928308905
+    },
+    {
+      "rank": 11,
+      "feature_index": 271,
+      "feature_name": "fBodyAcc-mad()-X",
+      "importance": 0.011382666242815559
+    },
+    {
+      "rank": 12,
+      "feature_index": 181,
+      "feature_name": "tBodyGyroJerk-iqr()-Z",
+      "importance": 0.010973202754838426
+    },
+    {
+      "rank": 13,
+      "feature_index": 83,
+      "feature_name": "tBodyAccJerk-std()-X",
+      "importance": 0.010095817307618868
+    },
+    {
+      "rank": 14,
+      "feature_index": 54,
+      "feature_name": "tGravityAcc-min()-Z",
+      "importance": 0.009949794299159691
+    },
+    {
+      "rank": 15,
+      "feature_index": 74,
+      "feature_name": "tGravityAcc-arCoeff()-Z,2",
+      "importance": 0.00988798876486673
+    },
+    {
+      "rank": 16,
+      "feature_index": 347,
+      "feature_name": "fBodyAccJerk-std()-X",
+      "importance": 0.009887807080078278
+    },
+    {
+      "rank": 17,
+      "feature_index": 360,
+      "feature_name": "fBodyAccJerk-energy()-X",
+      "importance": 0.009739790135871075
+    },
+    {
+      "rank": 18,
+      "feature_index": 58,
+      "feature_name": "tGravityAcc-energy()-Z",
+      "importance": 0.00965000733393903
+    },
+    {
+      "rank": 19,
+      "feature_index": 353,
+      "feature_name": "fBodyAccJerk-max()-X",
+      "importance": 0.009633328430900943
+    },
+    {
+      "rank": 20,
+      "feature_index": 560,
+      "feature_name": "angle(Z,gravityMean)",
+      "importance": 0.009608430937040818
+    },
+    {
+      "rank": 21,
+      "feature_index": 201,
+      "feature_name": "tBodyAccMag-std()",
+      "importance": 0.009603603821872414
+    },
+    {
+      "rank": 22,
+      "feature_index": 42,
+      "feature_name": "tGravityAcc-mean()-Z",
+      "importance": 0.009554630640756743
+    },
+    {
+      "rank": 23,
+      "feature_index": 504,
+      "feature_name": "fBodyAccMag-mad()",
+      "importance": 0.009345956623880386
+    },
+    {
+      "rank": 24,
+      "feature_index": 3,
+      "feature_name": "tBodyAcc-std()-X",
+      "importance": 0.009271393587626756
+    },
+    {
+      "rank": 25,
+      "feature_index": 389,
+      "feature_name": "fBodyAccJerk-bandsEnergy()-1,16",
+      "importance": 0.008972716545497368
+    }
+  ],
+  "hyperparameters": {
+    "n_estimators": 150,
+    "max_depth": 25,
+    "min_samples_split": 4,
+    "min_samples_leaf": 2,
+    "random_state": 42
+  }
+}
