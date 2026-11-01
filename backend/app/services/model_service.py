@@ -1,3 +1,4 @@
+import os
 import time
 import torch
 import numpy as np
@@ -13,7 +14,13 @@ from backend.app.schemas.predict import WindowPrediction, PredictionSummary, Pre
 
 class ModelService:
     def __init__(self):
-        self.device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+        target_device = os.environ.get("DEVICE", "cpu")
+        if target_device == "cuda" and torch.cuda.is_available():
+            self.device = torch.device("cuda")
+        elif target_device == "mps" and torch.backends.mps.is_available():
+            self.device = torch.device("mps")
+        else:
+            self.device = torch.device("cpu")
         self.rf_model: Optional[MotionSenseRandomForest] = None
         self.cnn_model: Optional[MotionSense1DCNN] = None
         self.cnn_lstm_model: Optional[MotionSenseCNNLSTM] = None
