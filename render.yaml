@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: motionsense-api
+    runtime: python
+    region: oregon
+    plan: free
+    branch: develop
+    buildCommand: "pip install --upgrade pip && pip install -r backend/requirements.txt"
+    startCommand: "uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.12
+      - key: DEVICE
+        value: cpu
+      - key: PROJECT_NAME
+        value: MotionSense
+      - key: API_V1_STR
+        value: /api
+      - key: BACKEND_CORS_ORIGINS
+        value: '["*"]'
+      - key: DATABASE_URL
+        value: sqlite:///./motionsense.db

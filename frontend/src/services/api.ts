@@ -6,23 +6,31 @@ import {
   HistoryItem 
 } from '../types';
 
-const API_BASE = import.meta.env.VITE_API_URL || '/api';
+export const getApiBase = (): string => {
+  if (typeof window !== 'undefined') {
+    const custom = localStorage.getItem('motionsense_api_url');
+    if (custom && custom.trim() !== '') {
+      return custom.trim().replace(/\/$/, '');
+    }
+  }
+  return (import.meta.env.VITE_API_URL as string) || '/api';
+};
 
 export const api = {
   async getHealth() {
-    const res = await fetch(`${API_BASE}/health`);
+    const res = await fetch(`${getApiBase()}/health`);
     if (!res.ok) throw new Error('Health check failed');
     return res.json();
   },
 
   async getDatasetInfo(): Promise<DatasetStats> {
-    const res = await fetch(`${API_BASE}/dataset/info`);
+    const res = await fetch(`${getApiBase()}/dataset/info`);
     if (!res.ok) throw new Error('Failed to fetch dataset info');
     return res.json();
   },
 
   async getModels(): Promise<ModelInfo[]> {
-    const res = await fetch(`${API_BASE}/models`);
+    const res = await fetch(`${getApiBase()}/models`);
     if (!res.ok) throw new Error('Failed to fetch models');
     return res.json();
   },
@@ -30,7 +38,7 @@ export const api = {
   async validateCSV(file: File): Promise<ValidationResult> {
     const formData = new FormData();
     formData.append('file', file);
-    const res = await fetch(`${API_BASE}/data/validate`, {
+    const res = await fetch(`${getApiBase()}/data/validate`, {
       method: 'POST',
       body: formData,
     });
@@ -41,7 +49,7 @@ export const api = {
   async predictFeatures(file: File): Promise<PredictionResult> {
     const formData = new FormData();
     formData.append('file', file);
-    const res = await fetch(`${API_BASE}/predict/features`, {
+    const res = await fetch(`${getApiBase()}/predict/features`, {
       method: 'POST',
       body: formData,
     });
@@ -56,7 +64,7 @@ export const api = {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('model_name', modelName);
-    const res = await fetch(`${API_BASE}/predict/raw`, {
+    const res = await fetch(`${getApiBase()}/predict/raw`, {
       method: 'POST',
       body: formData,
     });
@@ -68,19 +76,19 @@ export const api = {
   },
 
   async getEvaluationSummary() {
-    const res = await fetch(`${API_BASE}/evaluation/summary`);
+    const res = await fetch(`${getApiBase()}/evaluation/summary`);
     if (!res.ok) throw new Error('Failed to fetch evaluation summary');
     return res.json();
   },
 
   async getHistory(): Promise<{ total: number; items: HistoryItem[] }> {
-    const res = await fetch(`${API_BASE}/history`);
+    const res = await fetch(`${getApiBase()}/history`);
     if (!res.ok) throw new Error('Failed to fetch history');
     return res.json();
   },
 
   async deleteHistory(id: number) {
-    const res = await fetch(`${API_BASE}/history/${id}`, {
+    const res = await fetch(`${getApiBase()}/history/${id}`, {
       method: 'DELETE',
     });
     if (!res.ok) throw new Error('Failed to delete history item');
@@ -88,6 +96,6 @@ export const api = {
   },
 
   getSampleDownloadUrl(type: 'features' | 'raw') {
-    return `${API_BASE}/dataset/sample/${type}`;
+    return `${getApiBase()}/dataset/sample/${type}`;
   }
 };

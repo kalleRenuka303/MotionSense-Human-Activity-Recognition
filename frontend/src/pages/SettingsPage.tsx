@@ -7,21 +7,48 @@ import {
   Sliders, 
   Moon, 
   Sun,
-  Database
+  Database,
+  CheckCircle,
+  XCircle,
+  Loader2
 } from 'lucide-react';
+import { api } from '../services/api';
 
 export const SettingsPage: React.FC = () => {
-  const [uncertaintyThreshold, setUncertaintyThreshold] = useState<number>(0.55);
-  const [defaultModel, setDefaultModel] = useState<string>('cnn_lstm');
-  const [apiUrl, setApiUrl] = useState<string>('http://localhost:8000/api');
+  const [uncertaintyThreshold, setUncertaintyThreshold] = useState<number>(() => {
+    const val = localStorage.getItem('motionsense_threshold');
+    return val ? parseFloat(val) : 0.55;
+  });
+  const [defaultModel, setDefaultModel] = useState<string>(() => {
+    return localStorage.getItem('motionsense_default_model') || 'cnn_lstm';
+  });
+  const [apiUrl, setApiUrl] = useState<string>(() => {
+    return localStorage.getItem('motionsense_api_url') || (import.meta.env.VITE_API_URL as string) || '/api';
+  });
   const [saved, setSaved] = useState(false);
+  const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [testMessage, setTestMessage] = useState<string>('');
 
   const handleSave = () => {
     localStorage.setItem('motionsense_threshold', String(uncertaintyThreshold));
     localStorage.setItem('motionsense_default_model', defaultModel);
-    localStorage.setItem('motionsense_api_url', apiUrl);
+    localStorage.setItem('motionsense_api_url', apiUrl.trim());
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
+  };
+
+  const testConnection = async () => {
+    setTestStatus('testing');
+    setTestMessage('');
+    try {
+      localStorage.setItem('motionsense_api_url', apiUrl.trim());
+      const res = await api.getHealth();
+      setTestStatus('success');
+      setTestMessage(`Connected to ${res.service || 'MotionSense'} (Status: ${res.status})`);
+    } catch (err: any) {
+      setTestStatus('error');
+      setTestMessage(err.message || 'Connection failed');
+    }
   };
 
   return (
@@ -94,14 +121,46 @@ export const SettingsPage: React.FC = () => {
             <span>FastAPI Backend Endpoint URL</span>
           </label>
           <p className="text-xs text-slate-500 mb-3">
-            Target REST API endpoint for local development or production deployment.
+            Target REST API endpoint for local development or production deployment (e.g. <code>https://your-api.onrender.com/api</code> or <code>/api</code>).
           </p>
-          <input
-            type="text"
-            value={apiUrl}
-            onChange={(e) => setApiUrl(e.target.value)}
-            className="w-full sm:w-96 px-3.5 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs font-mono text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
-          />
+          <div className="flex flex-col sm:flex-row items-start sm:items-center space-y-2 sm:space-y-0 sm:space-x-3">
+            <input
+              type="text"
+              value={apiUrl}
+              onChange={(e) => setApiUrl(e.target.value)}
+              placeholder="/api or https://your-backend.com/api"
+              className="w-full sm:w-96 px-3.5 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs font-mono text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+            />
+            <button
+              onClick={testConnection}
+              disabled={testStatus === 'testing'}
+              className="px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs transition-all flex items-center space-x-1.5 cursor-pointer disabled:opacity-50"
+            >
+              {testStatus === 'testing' ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-teal-600" />
+                  <span>Testing...</span>
+                </>
+              ) : (
+                <>
+                  <Server className="w-3.5 h-3.5 text-slate-600" />
+                  <span>Test Connection</span>
+                </>
+              )}
+            </button>
+          </div>
+          {testStatus === 'success' && (
+            <p className="text-xs font-semibold text-emerald-600 mt-2 flex items-center space-x-1.5">
+              <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+              <span>{testMessage}</span>
+            </p>
+          )}
+          {testStatus === 'error' && (
+            <p className="text-xs font-semibold text-rose-600 mt-2 flex items-center space-x-1.5">
+              <XCircle className="w-3.5 h-3.5 text-rose-600" />
+              <span>{testMessage}</span>
+            </p>
+          )}
         </div>
 
         <div className="border-t border-slate-100 pt-6 flex items-center justify-between">
