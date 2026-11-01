@@ -35,6 +35,11 @@ wheels/
 .coverage
 htmlcov/
 
+# Mobile APK builds
+artifacts/apk/
+android/app/build/
+android/.gradle/
+
 # Node & Frontend
 node_modules/
 frontend/dist/
