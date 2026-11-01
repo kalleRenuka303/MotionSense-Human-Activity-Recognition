@@ -338,7 +338,7 @@ Output APKs will be located at:
 
 ## 15. How to Install the APK on a Physical Phone
 
-1. **Direct Download**: Download [**`MotionSense-v1.0-release.apk`**](https://github.com/leelaprasad6629/human-activity-recognition/releases/download/v1.0.0-android/MotionSense-v1.0-release.apk) directly onto your Android device.
+1. **Direct Download**: Download [**`MotionSense-v1.0-release.apk`**](https://github.com/kalleRenuka303/MotionSense-Human-Activity-Recognition/releases/download/v1.0.0-android/MotionSense-v1.0-release.apk) directly onto your Android device.
 2. **Install via File Manager**: Tap the downloaded file in your notifications or **Downloads** folder.
 3. **Allow Installation**: When prompted, enable *"Install unknown apps"* for your browser or file manager.
 4. **Via ADB (Developer Mode)**:

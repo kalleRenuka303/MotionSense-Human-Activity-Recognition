@@ -74,7 +74,8 @@ To make activity recognition physically reliable for a phone held vertically or 
 
 | Field | Debug APK | Release APK |
 |---|---|---|
-| **Direct Download URL** | [Download Debug APK](https://github.com/leelaprasad6629/human-activity-recognition/releases/download/v1.0.0-android/MotionSense-v1.0-debug.apk) | [Download Release APK](https://github.com/leelaprasad6629/human-activity-recognition/releases/download/v1.0.0-android/MotionSense-v1.0-release.apk) |
+| **Direct Download URL** | [Download Debug APK](https://github.com/kalleRenuka303/MotionSense-Human-Activity-Recognition/releases/download/v1.0.0-android/MotionSense-v1.0-debug.apk) | [Download Release APK](https://github.com/kalleRenuka303/MotionSense-Human-Activity-Recognition/releases/download/v1.0.0-android/MotionSense-v1.0-release.apk) |
+| **GitHub Release** | [`v1.0.0-android`](https://github.com/kalleRenuka303/MotionSense-Human-Activity-Recognition/releases/tag/v1.0.0-android) | [`v1.0.0-android`](https://github.com/kalleRenuka303/MotionSense-Human-Activity-Recognition/releases/tag/v1.0.0-android) |
 | **Package ID** | `com.motionsense.har` | `com.motionsense.har` |
 | **Version** | `1.0` (Code: `1`) | `1.0` (Code: `1`) |
 | **File Size** | $82.53\text{ MB}$ | $75.49\text{ MB}$ |
