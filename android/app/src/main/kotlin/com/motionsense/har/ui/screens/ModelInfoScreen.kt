@@ -31,13 +31,13 @@ fun ModelInfoScreen() {
                 fontWeight = FontWeight.Bold
             )
             Text(
-                text = "Deep learning models trained on UCI HAR Dataset 240",
+                text = "Real-time edge neural networks for smartphone activity recognition",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
 
-        // CNN-LSTM Card (Primary Proposed Model)
+        // Binary Walking Classifier (Primary Recommended Model)
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(20.dp),
@@ -55,7 +55,7 @@ fun ModelInfoScreen() {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "CNN-LSTM (Proposed Research)",
+                        text = "Binary Invariant Walking Classifier",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = ActivityWalking
@@ -65,7 +65,7 @@ fun ModelInfoScreen() {
                         color = ActivityWalking.copy(alpha = 0.2f)
                     ) {
                         Text(
-                            text = "PRIMARY",
+                            text = "RECOMMENDED",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             color = ActivityWalking,
@@ -75,23 +75,24 @@ fun ModelInfoScreen() {
                 }
 
                 Text(
-                    text = "Combines spatial 1D convolutional layers for local movement pattern extraction with recurrent LSTM cells to model temporal transition dynamics.",
+                    text = "Rotation-invariant 2-class classifier (Walking vs Stationary) utilizing 3D Euclidean magnitude norms (||v||). Mathematically immune to phone tilt and vertical hand orientation.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
-                Divider()
+                HorizontalDivider()
 
-                ModelSpecRow("Input Tensor", "[1, 128, 9] (128 steps @ 50 Hz, 9 channels)")
-                ModelSpecRow("Parameters", "263,814 trainable weights")
-                ModelSpecRow("Validation Acc", "92.26% (Subject-stratified)")
-                ModelSpecRow("Test Set Acc", "90.74% (Official test set)")
-                ModelSpecRow("Test Macro F1", "90.77%")
-                ModelSpecRow("Mobile Size", "1,034 KB (ONNX Runtime)")
+                ModelSpecRow("Input Tensor", "[1, 128, 9] (Total Acc, Body Acc, Gyro)")
+                ModelSpecRow("Test Accuracy", "99.86% (Subject-independent)")
+                ModelSpecRow("Walking Recall", "100.00% (1,387 / 1,387 windows)")
+                ModelSpecRow("Walking Precision", "99.71%")
+                ModelSpecRow("False Positive Rate", "0.26% (Static flagged as walking)")
+                ModelSpecRow("Mobile Size", "11.0 KB (Ultra-compact ONNX)")
+                ModelSpecRow("Inference Latency", "< 0.5 ms on phone CPU")
             }
         }
 
-        // 1D CNN Card
+        // 3-Class Classifier (Experimental)
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(20.dp)
@@ -108,16 +109,16 @@ fun ModelInfoScreen() {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "1D Convolutional Neural Network",
+                        text = "3-Class Classifier (Experimental)",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
                     Surface(
                         shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer
+                        color = MaterialTheme.colorScheme.tertiaryContainer
                     ) {
                         Text(
-                            text = "FAST",
+                            text = "EXPERIMENTAL",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
@@ -126,18 +127,68 @@ fun ModelInfoScreen() {
                 }
 
                 Text(
-                    text = "Multi-stage 1D CNN with Batch Normalization and Global Average Pooling for ultra-low latency mobile inference.",
+                    text = "Distinguishes Walking vs Sitting vs Standing. NOTE: In a handheld position, gravity vector and hand motion are virtually identical between sitting and standing, leading to expected static confusion.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
-                Divider()
+                HorizontalDivider()
 
-                ModelSpecRow("Input Tensor", "[1, 128, 9] (128 steps @ 50 Hz, 9 channels)")
+                ModelSpecRow("Input Tensor", "[1, 128, 9]")
+                ModelSpecRow("Test Accuracy", "87.43% (UCI HAR Test set)")
+                ModelSpecRow("Walking Recall", "100.00%")
+                ModelSpecRow("Sitting Recall", "42.36% (Confusion with standing)")
+                ModelSpecRow("Standing Recall", "96.24%")
+                ModelSpecRow("Mobile Size", "11.6 KB (ONNX Runtime)")
+            }
+        }
+
+        // 6-Class 1D CNN Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "6-Class 1D CNN (UCI HAR Standard)",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Text(
+                            text = "6-CLASS",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+
+                Text(
+                    text = "Multi-stage 1D CNN with Batch Normalization and Global Average Pooling trained on UCI HAR horizontal waist sensor orientation.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                HorizontalDivider()
+
+                ModelSpecRow("Input Tensor", "[1, 128, 9]")
                 ModelSpecRow("Parameters", "111,238 weights")
                 ModelSpecRow("Test Set Acc", "93.99% (Official test set)")
-                ModelSpecRow("Test Macro F1", "93.99%")
-                ModelSpecRow("Inference Latency", "< 5 ms on phone CPU")
+                ModelSpecRow("Macro F1", "93.99%")
                 ModelSpecRow("Mobile Size", "434 KB (ONNX Runtime)")
             }
         }
@@ -160,7 +211,7 @@ fun ModelInfoScreen() {
                 )
 
                 Text(
-                    text = "• UCI HAR Dataset 240 (30 subjects, 10,299 windows)\n" +
+                    text = "• UCI HAR Dataset (30 subjects, 10,299 windows)\n" +
                             "• Zero subject leakage (21 train, 9 test)\n" +
                             "• 9 Inertial Channels: Total Acc (X, Y, Z), Body Acc (X, Y, Z), Gyroscope (X, Y, Z)\n" +
                             "• Normalization: Acceleration divided by standard gravity 9.80665 m/s² to match 'g' units\n" +

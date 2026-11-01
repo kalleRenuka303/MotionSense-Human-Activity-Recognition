@@ -1,5 +1,6 @@
 package com.motionsense.har.ui.screens
 
+import android.content.Intent
 import android.widget.Toast
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
@@ -27,6 +28,7 @@ import com.motionsense.har.ml.MotionClassifier
 import com.motionsense.har.sensor.PhonePlacement
 import com.motionsense.har.ui.theme.*
 import com.motionsense.har.ui.viewmodel.MotionViewModel
+import java.io.File
 
 @Composable
 fun HomeScreen(viewModel: MotionViewModel) {
@@ -40,16 +42,27 @@ fun HomeScreen(viewModel: MotionViewModel) {
     val placement by viewModel.phonePlacement.collectAsState()
     val latestResult by viewModel.latestResult.collectAsState()
 
+    // Sensor Recorder States
+    val isRecording by viewModel.isRecording.collectAsState()
+    val recordingCount by viewModel.recordingSampleCount.collectAsState()
+    val recordingDurationSec by viewModel.recordingDurationSec.collectAsState()
+    val recordingLabel by viewModel.recordingLabel.collectAsState()
+    val savedRecordings by viewModel.savedRecordingsList.collectAsState()
+
     var showDiagnostics by remember { mutableStateOf(false) }
+    var showRecordingsList by remember { mutableStateOf(false) }
+    var selectedGroundTruthLabel by remember { mutableStateOf("WALKING") }
 
     val activityColor by animateColorAsState(
         targetValue = when (currentActivity) {
             ActivityType.WALKING -> ActivityWalking
+            ActivityType.NOT_WALKING -> ActivityNotWalking
             ActivityType.WALKING_UPSTAIRS -> ActivityWalkingUpstairs
             ActivityType.WALKING_DOWNSTAIRS -> ActivityWalkingDownstairs
             ActivityType.SITTING -> ActivitySitting
             ActivityType.STANDING -> ActivityStanding
             ActivityType.LAYING -> ActivityLaying
+            ActivityType.UNKNOWN -> ActivityUnknown
             ActivityType.UNCERTAIN -> ActivityUncertain
         },
         label = "activityColor"
@@ -57,11 +70,13 @@ fun HomeScreen(viewModel: MotionViewModel) {
 
     val activityIcon: ImageVector = when (currentActivity) {
         ActivityType.WALKING -> Icons.Default.DirectionsWalk
+        ActivityType.NOT_WALKING -> Icons.Default.Accessibility
         ActivityType.WALKING_UPSTAIRS -> Icons.Default.DirectionsRun
         ActivityType.WALKING_DOWNSTAIRS -> Icons.Default.DirectionsWalk
         ActivityType.SITTING -> Icons.Default.AirlineSeatReclineNormal
         ActivityType.STANDING -> Icons.Default.AccessibilityNew
         ActivityType.LAYING -> Icons.Default.Hotel
+        ActivityType.UNKNOWN -> Icons.Default.Sync
         ActivityType.UNCERTAIN -> Icons.Default.HelpOutline
     }
 
@@ -209,7 +224,7 @@ fun HomeScreen(viewModel: MotionViewModel) {
                 Icon(Icons.Default.PlayArrow, contentDescription = "Start")
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "START TRACKING",
+                    text = "START REAL-TIME TRACKING",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -230,6 +245,215 @@ fun HomeScreen(viewModel: MotionViewModel) {
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
+            }
+        }
+
+        // Ground-Truth Sensor Data Recorder Card (Phase 1 Requirement)
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = if (isRecording) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f)
+                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+            )
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.FiberManualRecord,
+                            contentDescription = null,
+                            tint = if (isRecording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Sensor Data Recorder",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Text(
+                        text = if (isRecording) "RECORDING" else "IDLE",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isRecording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Text(
+                    text = "Record real 50 Hz accelerometer & gyroscope CSVs with ground-truth activity labels for physical validation:",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                // Activity Label Selector Chips
+                Text(
+                    text = "Select Ground-Truth Label:",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                val labels = listOf("WALKING", "SITTING", "STANDING", "WALKING_UPSTAIRS", "WALKING_DOWNSTAIRS", "LAYING")
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        labels.take(3).forEach { lbl ->
+                            FilterChip(
+                                selected = selectedGroundTruthLabel == lbl,
+                                onClick = {
+                                    if (!isRecording) selectedGroundTruthLabel = lbl
+                                },
+                                label = { Text(lbl.replace("_", " "), fontSize = 11.sp) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        labels.drop(3).forEach { lbl ->
+                            FilterChip(
+                                selected = selectedGroundTruthLabel == lbl,
+                                onClick = {
+                                    if (!isRecording) selectedGroundTruthLabel = lbl
+                                },
+                                label = { Text(lbl.replace("_", " "), fontSize = 11.sp) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+
+                // Recording Status / Button
+                if (isRecording) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.error.copy(alpha = 0.1f))
+                            .padding(8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "Recording: $recordingLabel • $recordingCount samples • ${recordingDurationSec}s",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+
+                    Button(
+                        onClick = {
+                            val saved = viewModel.stopSensorRecording()
+                            Toast.makeText(context, "Saved recording: ${saved?.name}", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    ) {
+                        Icon(Icons.Default.Stop, contentDescription = null)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("STOP & SAVE CSV RECORDING")
+                    }
+                } else {
+                    Button(
+                        onClick = {
+                            viewModel.startSensorRecording(selectedGroundTruthLabel)
+                            Toast.makeText(context, "Started recording: $selectedGroundTruthLabel", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary)
+                    ) {
+                        Icon(Icons.Default.FiberManualRecord, contentDescription = null)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("START RECORDING ($selectedGroundTruthLabel)")
+                    }
+                }
+
+                // Saved Recordings List Toggle
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Saved Recordings (${savedRecordings.size})",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    TextButton(onClick = { showRecordingsList = !showRecordingsList }) {
+                        Text(if (showRecordingsList) "Hide" else "View All")
+                    }
+                }
+
+                if (showRecordingsList) {
+                    if (savedRecordings.isEmpty()) {
+                        Text(
+                            text = "No saved sensor recordings yet.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            savedRecordings.take(5).forEach { file ->
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(8.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = file.name,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                maxLines = 1
+                                            )
+                                            Text(
+                                                text = "${file.length() / 1024} KB",
+                                                fontSize = 10.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+
+                                        Row {
+                                            IconButton(
+                                                onClick = {
+                                                    val intent = viewModel.createShareIntent(file)
+                                                    if (intent != null) {
+                                                        context.startActivity(Intent.createChooser(intent, "Share Sensor CSV"))
+                                                    }
+                                                },
+                                                modifier = Modifier.size(32.dp)
+                                            ) {
+                                                Icon(Icons.Default.Share, contentDescription = "Share", modifier = Modifier.size(16.dp))
+                                            }
+                                            IconButton(
+                                                onClick = {
+                                                    viewModel.deleteRecording(file)
+                                                },
+                                                modifier = Modifier.size(32.dp)
+                                            ) {
+                                                Icon(Icons.Default.Delete, contentDescription = "Delete", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.error)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -255,7 +479,7 @@ fun HomeScreen(viewModel: MotionViewModel) {
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "CRITICAL",
+                        text = "ACTIVE",
                         style = MaterialTheme.typography.labelSmall,
                         color = ActivityWalking,
                         fontWeight = FontWeight.Bold
@@ -263,7 +487,7 @@ fun HomeScreen(viewModel: MotionViewModel) {
                 }
 
                 Text(
-                    text = "UCI HAR was recorded with a horizontal waist phone. Select your placement to align sensor axes to the model reference frame:",
+                    text = "Select your current phone carrying style for proper coordinate alignment:",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -273,9 +497,19 @@ fun HomeScreen(viewModel: MotionViewModel) {
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     FilterChip(
+                        selected = placement == PhonePlacement.HANDHELD_PORTRAIT,
+                        onClick = { viewModel.setPlacement(PhonePlacement.HANDHELD_PORTRAIT) },
+                        label = { Text("Handheld", fontSize = 12.sp) },
+                        leadingIcon = if (placement == PhonePlacement.HANDHELD_PORTRAIT) {
+                            { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }
+                        } else null,
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    FilterChip(
                         selected = placement == PhonePlacement.FRONT_POCKET_PORTRAIT,
                         onClick = { viewModel.setPlacement(PhonePlacement.FRONT_POCKET_PORTRAIT) },
-                        label = { Text("Front Pocket", fontSize = 12.sp) },
+                        label = { Text("Pocket", fontSize = 12.sp) },
                         leadingIcon = if (placement == PhonePlacement.FRONT_POCKET_PORTRAIT) {
                             { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }
                         } else null,
@@ -287,16 +521,6 @@ fun HomeScreen(viewModel: MotionViewModel) {
                         onClick = { viewModel.setPlacement(PhonePlacement.WAIST_HOLSTER_LANDSCAPE) },
                         label = { Text("Waist Belt", fontSize = 12.sp) },
                         leadingIcon = if (placement == PhonePlacement.WAIST_HOLSTER_LANDSCAPE) {
-                            { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }
-                        } else null,
-                        modifier = Modifier.weight(1f)
-                    )
-
-                    FilterChip(
-                        selected = placement == PhonePlacement.HANDHELD_PORTRAIT,
-                        onClick = { viewModel.setPlacement(PhonePlacement.HANDHELD_PORTRAIT) },
-                        label = { Text("Handheld", fontSize = 12.sp) },
-                        leadingIcon = if (placement == PhonePlacement.HANDHELD_PORTRAIT) {
                             { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }
                         } else null,
                         modifier = Modifier.weight(1f)
@@ -316,40 +540,75 @@ fun HomeScreen(viewModel: MotionViewModel) {
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text(
-                    text = "Inference Neural Network",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold
-                )
-
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
+                    Text(
+                        text = "Inference Neural Network",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "4 AVAILABLE",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                // Primary Recommended Models
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     FilterChip(
-                        selected = selectedModel == MotionClassifier.MODEL_1D_CNN,
-                        onClick = { viewModel.setModel(MotionClassifier.MODEL_1D_CNN) },
-                        label = { Text("1D CNN (93.99% • Fast)") },
-                        leadingIcon = if (selectedModel == MotionClassifier.MODEL_1D_CNN) {
-                            { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                        selected = selectedModel == MotionClassifier.MODEL_BINARY_WALKING,
+                        onClick = { viewModel.setModel(MotionClassifier.MODEL_BINARY_WALKING) },
+                        label = { Text("Binary Invariant (99.86% • Handheld Recommended)", fontSize = 12.sp) },
+                        leadingIcon = if (selectedModel == MotionClassifier.MODEL_BINARY_WALKING) {
+                            { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }
                         } else null,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.fillMaxWidth()
                     )
 
                     FilterChip(
-                        selected = selectedModel == MotionClassifier.MODEL_CNN_LSTM,
-                        onClick = { viewModel.setModel(MotionClassifier.MODEL_CNN_LSTM) },
-                        label = { Text("CNN-LSTM (90.74%)") },
-                        leadingIcon = if (selectedModel == MotionClassifier.MODEL_CNN_LSTM) {
-                            { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                        selected = selectedModel == MotionClassifier.MODEL_3_CLASS,
+                        onClick = { viewModel.setModel(MotionClassifier.MODEL_3_CLASS) },
+                        label = { Text("3-Class: Walk / Sit / Stand (87.43% • Experimental)", fontSize = 12.sp) },
+                        leadingIcon = if (selectedModel == MotionClassifier.MODEL_3_CLASS) {
+                            { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }
                         } else null,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.fillMaxWidth()
                     )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        FilterChip(
+                            selected = selectedModel == MotionClassifier.MODEL_1D_CNN,
+                            onClick = { viewModel.setModel(MotionClassifier.MODEL_1D_CNN) },
+                            label = { Text("6-Class 1D CNN", fontSize = 11.sp) },
+                            leadingIcon = if (selectedModel == MotionClassifier.MODEL_1D_CNN) {
+                                { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(12.dp)) }
+                            } else null,
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        FilterChip(
+                            selected = selectedModel == MotionClassifier.MODEL_CNN_LSTM,
+                            onClick = { viewModel.setModel(MotionClassifier.MODEL_CNN_LSTM) },
+                            label = { Text("6-Class CNN-LSTM", fontSize = 11.sp) },
+                            leadingIcon = if (selectedModel == MotionClassifier.MODEL_CNN_LSTM) {
+                                { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(12.dp)) }
+                            } else null,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                 }
             }
         }
 
-        // Toggle Sensor Diagnostics Mode (Phase 4 requirement)
+        // Toggle Sensor Diagnostics Mode
         OutlinedButton(
             onClick = { showDiagnostics = !showDiagnostics },
             modifier = Modifier.fillMaxWidth(),
@@ -360,10 +619,10 @@ fun HomeScreen(viewModel: MotionViewModel) {
                 contentDescription = null
             )
             Spacer(modifier = Modifier.width(8.dp))
-            Text(if (showDiagnostics) "Hide Sensor Diagnostics" else "Show Sensor Diagnostics (Phase 4)")
+            Text(if (showDiagnostics) "Hide Sensor Diagnostics" else "Show Sensor & ML Diagnostics")
         }
 
-        // PHASE 4: Complete Sensor Diagnostics Panel
+        // Complete Sensor & ML Diagnostics Panel
         if (showDiagnostics) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -448,7 +707,11 @@ fun HomeScreen(viewModel: MotionViewModel) {
                     latestResult?.let { res ->
                         Text(text = "Model Probabilities (${res.modelUsed}):", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            val labels = listOf("WALKING", "UPSTAIRS", "DOWNSTAIRS", "SITTING", "STANDING", "LAYING")
+                            val labels = when (selectedModel) {
+                                MotionClassifier.MODEL_BINARY_WALKING -> listOf("WALKING", "NOT_WALKING")
+                                MotionClassifier.MODEL_3_CLASS -> listOf("WALKING", "SITTING", "STANDING")
+                                else -> listOf("WALKING", "UPSTAIRS", "DOWNSTAIRS", "SITTING", "STANDING", "LAYING")
+                            }
                             for (idx in labels.indices) {
                                 val p = res.probabilities.getOrNull(idx) ?: 0f
                                 val logit = res.logits.getOrNull(idx) ?: 0f
@@ -459,7 +722,10 @@ fun HomeScreen(viewModel: MotionViewModel) {
                                     }
                                     LinearProgressIndicator(
                                         progress = { p },
-                                        modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp))
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(4.dp)
+                                            .clip(RoundedCornerShape(2.dp))
                                     )
                                 }
                             }

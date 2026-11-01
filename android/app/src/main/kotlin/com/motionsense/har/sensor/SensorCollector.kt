@@ -67,6 +67,9 @@ class SensorCollector(
     // Current placement mode (defaults to Front Pocket Portrait, can be changed at runtime)
     var placement: PhonePlacement = PhonePlacement.FRONT_POCKET_PORTRAIT
 
+    // Real sensor data recorder for ground-truth CSV sessions
+    val recorder = SensorDataRecorder(context)
+
     // Exact 3rd-order Butterworth digital filter matching UCI HAR preprocessing (0.3 Hz cutoff)
     private val butterworthFilter = TriaxialButterworthFilter()
 
@@ -134,6 +137,9 @@ class SensorCollector(
     fun stop() {
         if (!isTracking) return
         isTracking = false
+        if (recorder.isRecording.value) {
+            recorder.stopRecording()
+        }
         sensorManager.unregisterListener(this)
         sampleBuffer.clear()
         Log.d(TAG, "Sensor collection stopped.")
@@ -238,6 +244,22 @@ class SensorCollector(
                 sumSqDiff += diff * diff
             }
             jitterMs = sqrt(sumSqDiff / recentIntervalsNs.size).toFloat()
+        }
+
+        // Record real sensor sample to ground-truth CSV if logging is active
+        if (recorder.isRecording.value) {
+            recorder.recordSample(
+                timestampNs = lastEventTimestampNs,
+                accelX = rawTotalAcc[0],
+                accelY = rawTotalAcc[1],
+                accelZ = rawTotalAcc[2],
+                gyroX = rawGyro[0],
+                gyroY = rawGyro[1],
+                gyroZ = rawGyro[2],
+                samplingRateHz = avgHz,
+                orientation = placement.title,
+                label = recorder.currentLabel.value
+            )
         }
 
         val fillPercent = (sampleBuffer.size * 100) / WINDOW_SIZE

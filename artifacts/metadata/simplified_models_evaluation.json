@@ -1,0 +1,115 @@
+{
+  "model_a_2class": {
+    "name": "InvariantBinaryWalkingClassifier",
+    "classes": [
+      "WALKING",
+      "NOT_WALKING"
+    ],
+    "test_accuracy": 0.998642687478792,
+    "confusion_matrix": [
+      [
+        1387,
+        0
+      ],
+      [
+        4,
+        1556
+      ]
+    ],
+    "classification_report": {
+      "WALKING": {
+        "precision": 0.9971243709561467,
+        "recall": 1.0,
+        "f1-score": 0.9985601151907847,
+        "support": 1387.0
+      },
+      "NOT_WALKING": {
+        "precision": 1.0,
+        "recall": 0.9974358974358974,
+        "f1-score": 0.9987163029525032,
+        "support": 1560.0
+      },
+      "accuracy": 0.998642687478792,
+      "macro avg": {
+        "precision": 0.9985621854780733,
+        "recall": 0.9987179487179487,
+        "f1-score": 0.9986382090716439,
+        "support": 2947.0
+      },
+      "weighted avg": {
+        "precision": 0.9986465906060995,
+        "recall": 0.998642687478792,
+        "f1-score": 0.9986427934765942,
+        "support": 2947.0
+      }
+    },
+    "false_positive_rate": 0.002564102564102564,
+    "false_negative_rate": 0.0,
+    "onnx_max_abs_diff": 4.76837158203125e-07,
+    "onnx_size_kb": 11.0185546875
+  },
+  "model_b_3class": {
+    "name": "ThreeClassClassifier",
+    "classes": [
+      "WALKING",
+      "SITTING",
+      "STANDING"
+    ],
+    "test_accuracy": 0.8742738589211618,
+    "confusion_matrix": [
+      [
+        1387,
+        0,
+        0
+      ],
+      [
+        3,
+        208,
+        280
+      ],
+      [
+        7,
+        13,
+        512
+      ]
+    ],
+    "classification_report": {
+      "WALKING": {
+        "precision": 0.9928418038654259,
+        "recall": 1.0,
+        "f1-score": 0.9964080459770115,
+        "support": 1387.0
+      },
+      "SITTING": {
+        "precision": 0.9411764705882353,
+        "recall": 0.42362525458248473,
+        "f1-score": 0.5842696629213483,
+        "support": 491.0
+      },
+      "STANDING": {
+        "precision": 0.6464646464646465,
+        "recall": 0.9624060150375939,
+        "f1-score": 0.7734138972809668,
+        "support": 532.0
+      },
+      "accuracy": 0.8742738589211618,
+      "macro avg": {
+        "precision": 0.8601609736394359,
+        "recall": 0.7953437565400262,
+        "f1-score": 0.7846972020597756,
+        "support": 2410.0
+      },
+      "weighted avg": {
+        "precision": 0.905854116572349,
+        "recall": 0.8742738589211618,
+        "f1-score": 0.8632159990116064,
+        "support": 2410.0
+      }
+    },
+    "sitting_confusion_with_standing": 280,
+    "standing_confusion_with_sitting": 13,
+    "onnx_max_abs_diff": 1.1920928955078125e-06,
+    "onnx_size_kb": 11.5810546875
+  },
+  "handheld_physical_finding": "In a handheld smartphone held vertically, Sitting and Standing produce physically identical inertial sensor readings (gravity along +Y, gyro near zero). A phone in hand has no sensor contact with knees, hips, or feet. Therefore, Sitting and Standing cannot be reliably separated in handheld mode without body attachment. Model A (WALKING vs NOT_WALKING) provides 99.9% reliable recognition and is mathematically rotation-invariant."
+}

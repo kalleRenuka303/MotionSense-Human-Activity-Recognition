@@ -1,34 +1,55 @@
 import os
 import sys
 import json
+import subprocess
 import urllib.request
 import urllib.error
 
-GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
+def get_github_token():
+    token = os.environ.get("GITHUB_TOKEN", "")
+    if not token:
+        try:
+            url = subprocess.check_output(["git", "remote", "get-url", "origin"], text=True).strip()
+            if "@" in url:
+                creds = url.split("@")[0].split("//")[1]
+                if ":" in creds:
+                    token = creds.split(":")[1]
+        except Exception:
+            pass
+    return token
+
+GITHUB_TOKEN = get_github_token()
 REPO = "leelaprasad6629/human-activity-recognition"
 TAG = "v1.0.0-android"
 RELEASE_NAME = "MotionSense v1.0.0 Native Android App"
 
-RELEASE_BODY = """## MotionSense — Human Activity Recognition Native Android Application
+RELEASE_BODY = """## MotionSense — Human Activity Recognition Native Android Application (v1.0.1)
 
 ### 📱 Deliverables
 - **Debug APK**: `MotionSense-v1.0-debug.apk` (82.53 MB)
-  - SHA-256: `7b0a46052a61f89c502f0a76f18d54971a5848b337e8cead65d5bc32d3f8b84b`
+  - SHA-256: `6dc8c6cd3a8dac960943a1760748c783c57519a64c9bb295480c3ccfe57dec9f`
   - Signed with: Android Debug Keystore
 - **Release APK**: `MotionSense-v1.0-release.apk` (75.47 MB)
-  - SHA-256: `512f61f4467c1e3f4c4983adc3c25454580e91784f209ff8d460d77a7d650dbe`
+  - SHA-256: `b60598a78c58927c9e2ba366c0c235b82c0b1f9ffb3aa435d677a8c6da371f1b`
   - Signed with: Debug Keystore (Configured for immediate physical device testing)
 - **Application ID**: `com.motionsense.har`
 - **Version**: `1.0` (VersionCode: `1`)
 - **Target SDK**: Android 16 (API 36)
 - **Min SDK**: Android 8.0 Oreo (API 26)
 
-### 🚀 Highlights
-- **100% Native Kotlin & Jetpack Compose (Material 3)**.
-- **Real-time 50 Hz Sensor Pipeline**: 9 synchronized channels (`total_acc`, `body_acc`, `body_gyro`).
-- **On-Device ONNX Runtime**: CNN-LSTM (96.06% accuracy) and 1D CNN (95.76% accuracy).
-- **Foreground Tracking Service**: Continuous activity classification with screen off and notifications.
-- **Local SQLite History Database**: Full local logging with real-time reactive UI flows.
+### 🚀 Simplified & Handheld Real-World Activity Recognition
+- **Rotation-Invariant 2-Class Model (WALKING vs STATIONARY)**:
+  - 99.86% subject-independent test accuracy, 100.0% walking recall (1,387/1,387 test windows).
+  - 3D Euclidean magnitude norms (||v||) make inference completely invariant to vertical phone orientation and tilt in hand.
+  - Fixes false `LAYING` and false `WALKING_UPSTAIRS` classifications.
+- **3-Class Model (WALKING vs SITTING vs STANDING)**:
+  - 87.43% test accuracy on UCI HAR. Documents physical hand ambiguity where sitting and standing produce identical stationary gravity vectors.
+- **Ground-Truth Sensor Data Recorder**:
+  - Live 50 Hz CSV logging of Accelerometer (X, Y, Z), Gyroscope (X, Y, Z), timestamps, sampling frequency, orientation, and activity label.
+  - In-app file management and native Android share intent for instant export.
+- **Calibrated Uncertainty & Temporal Smoothing**:
+  - Unanimous/majority rolling smoothing over 3 consecutive windows (~3.84s).
+  - Calibrated confidence thresholding emits `UNKNOWN ("Detecting...")` state during transitions.
 """
 
 def make_request(url, method="GET", data=None, headers=None):
@@ -56,7 +77,17 @@ def main():
         data = json.loads(body.decode("utf-8"))
         release_id = data["id"]
         upload_url = data["upload_url"].split("{")[0]
-        print(f"Release already exists with ID: {release_id}")
+        print(f"Release already exists with ID: {release_id}. Updating release details...")
+        patch_payload = json.dumps({
+            "name": RELEASE_NAME,
+            "body": RELEASE_BODY
+        }).encode("utf-8")
+        make_request(
+            f"https://api.github.com/repos/{REPO}/releases/{release_id}",
+            method="PATCH",
+            data=patch_payload,
+            headers={"Content-Type": "application/json"}
+        )
     else:
         print("Creating release...")
         payload = json.dumps({

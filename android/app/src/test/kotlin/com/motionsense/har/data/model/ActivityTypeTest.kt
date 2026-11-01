@@ -10,11 +10,13 @@ class ActivityTypeTest {
     fun testAllActivitiesExist() {
         val types = ActivityType.values()
         assertTrue(types.any { it.name == "WALKING" })
+        assertTrue(types.any { it.name == "NOT_WALKING" })
         assertTrue(types.any { it.name == "WALKING_UPSTAIRS" })
         assertTrue(types.any { it.name == "WALKING_DOWNSTAIRS" })
         assertTrue(types.any { it.name == "SITTING" })
         assertTrue(types.any { it.name == "STANDING" })
         assertTrue(types.any { it.name == "LAYING" })
+        assertTrue(types.any { it.name == "UNKNOWN" })
         assertTrue(types.any { it.name == "UNCERTAIN" })
     }
 
@@ -48,5 +50,20 @@ class ActivityTypeTest {
         assertEquals(ActivityType.STANDING, ActivityType.fromIndex(4))
         assertEquals(ActivityType.LAYING, ActivityType.fromIndex(5))
         assertEquals(ActivityType.UNCERTAIN, ActivityType.fromIndex(99))
+    }
+
+    @Test
+    fun testFromBinaryIndex() {
+        assertEquals(ActivityType.WALKING, ActivityType.fromBinaryIndex(0))
+        assertEquals(ActivityType.NOT_WALKING, ActivityType.fromBinaryIndex(1))
+        assertEquals(ActivityType.UNKNOWN, ActivityType.fromBinaryIndex(99))
+    }
+
+    @Test
+    fun testFromThreeClassIndex() {
+        assertEquals(ActivityType.WALKING, ActivityType.fromThreeClassIndex(0))
+        assertEquals(ActivityType.SITTING, ActivityType.fromThreeClassIndex(1))
+        assertEquals(ActivityType.STANDING, ActivityType.fromThreeClassIndex(2))
+        assertEquals(ActivityType.UNKNOWN, ActivityType.fromThreeClassIndex(99))
     }
 }

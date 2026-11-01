@@ -8,7 +8,6 @@ import android.util.Log
 import com.motionsense.har.data.model.ActivityType
 import java.nio.FloatBuffer
 import kotlin.math.exp
-import kotlin.math.max
 
 data class ClassificationResult(
     val activityType: ActivityType,
@@ -25,14 +24,18 @@ data class ClassificationResult(
 class MotionClassifier(private val context: Context) {
 
     private val env: OrtEnvironment = OrtEnvironment.getEnvironment()
-    private var cnnLstmSession: OrtSession? = null
+    private var binarySession: OrtSession? = null
+    private var threeClassSession: OrtSession? = null
     private var cnn1dSession: OrtSession? = null
+    private var cnnLstmSession: OrtSession? = null
 
     // Rolling history for temporal smoothing (3 windows = ~3.84 seconds)
     private val predictionHistory = ArrayList<ActivityType>(3)
 
     companion object {
         private const val TAG = "MotionClassifier"
+        const val MODEL_BINARY_WALKING = "walking_binary"
+        const val MODEL_3_CLASS = "three_class"
         const val MODEL_1D_CNN = "cnn_1d"
         const val MODEL_CNN_LSTM = "cnn_lstm"
         const val WINDOW_SIZE = 128
@@ -46,6 +49,22 @@ class MotionClassifier(private val context: Context) {
     }
 
     private fun loadModels() {
+        try {
+            val binaryBytes = context.assets.open("models/walking_binary.onnx").readBytes()
+            binarySession = env.createSession(binaryBytes, OrtSession.SessionOptions())
+            Log.d(TAG, "Binary Walking ONNX Model loaded successfully (99.86% Test Acc, Rotation-Invariant).")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to load Binary Walking ONNX model: ${e.message}", e)
+        }
+
+        try {
+            val threeClassBytes = context.assets.open("models/three_class.onnx").readBytes()
+            threeClassSession = env.createSession(threeClassBytes, OrtSession.SessionOptions())
+            Log.d(TAG, "Three-Class ONNX Model loaded successfully (87.43% Test Acc).")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to load Three-Class ONNX model: ${e.message}", e)
+        }
+
         try {
             val cnnBytes = context.assets.open("models/cnn_1d.onnx").readBytes()
             cnn1dSession = env.createSession(cnnBytes, OrtSession.SessionOptions())
@@ -66,21 +85,22 @@ class MotionClassifier(private val context: Context) {
     /**
      * Classifies a 128x9 window of sensor readings.
      * @param windowData 1D FloatArray of size 128 * 9 = 1152 elements (flattened row-major).
-     * @param modelType "cnn_1d" (recommended) or "cnn_lstm"
-     * @param uncertaintyThreshold Minimum confidence below which result is flagged UNCERTAIN.
+     * @param modelType "walking_binary" (default & recommended), "three_class", "cnn_1d", or "cnn_lstm"
+     * @param uncertaintyThreshold Minimum confidence below which result is flagged UNKNOWN.
      * @param enableSmoothing Whether to apply rolling majority voting across consecutive windows.
      */
     fun classifyWindow(
         windowData: FloatArray,
-        modelType: String = MODEL_1D_CNN,
+        modelType: String = MODEL_BINARY_WALKING,
         uncertaintyThreshold: Float = DEFAULT_CONFIDENCE_THRESHOLD,
         enableSmoothing: Boolean = true
     ): ClassificationResult {
         val startTime = System.currentTimeMillis()
-        val session = if (modelType == MODEL_1D_CNN) {
-            cnn1dSession ?: cnnLstmSession
-        } else {
-            cnnLstmSession ?: cnn1dSession
+        val session = when (modelType) {
+            MODEL_BINARY_WALKING -> binarySession ?: cnn1dSession
+            MODEL_3_CLASS -> threeClassSession ?: cnn1dSession
+            MODEL_CNN_LSTM -> cnnLstmSession ?: cnn1dSession
+            else -> cnn1dSession ?: binarySession
         } ?: return fallbackResult(modelType)
 
         val tensorShape = longArrayOf(1, WINDOW_SIZE.toLong(), CHANNELS.toLong())
@@ -102,12 +122,26 @@ class MotionClassifier(private val context: Context) {
                 }
             }
 
-            val isUncertain = maxProb < uncertaintyThreshold
-            val rawActivity = if (isUncertain) ActivityType.UNCERTAIN else ActivityType.fromIndex(maxIndex)
+            val effectiveThreshold = when (modelType) {
+                MODEL_BINARY_WALKING -> 0.60f
+                MODEL_3_CLASS -> 0.50f
+                else -> uncertaintyThreshold
+            }
+
+            val isUncertain = maxProb < effectiveThreshold
+            val rawActivity = if (isUncertain) {
+                ActivityType.UNKNOWN
+            } else {
+                when (modelType) {
+                    MODEL_BINARY_WALKING -> ActivityType.fromBinaryIndex(maxIndex)
+                    MODEL_3_CLASS -> ActivityType.fromThreeClassIndex(maxIndex)
+                    else -> ActivityType.fromIndex(maxIndex)
+                }
+            }
 
             // Temporal Smoothing (Majority Voting)
             var smoothedActivity = rawActivity
-            if (enableSmoothing && rawActivity != ActivityType.UNCERTAIN) {
+            if (enableSmoothing && rawActivity != ActivityType.UNKNOWN && rawActivity != ActivityType.UNCERTAIN) {
                 predictionHistory.add(rawActivity)
                 if (predictionHistory.size > SMOOTHING_WINDOW_SIZE) {
                     predictionHistory.removeAt(0)
@@ -125,11 +159,21 @@ class MotionClassifier(private val context: Context) {
                         smoothedActivity = act
                     }
                 }
+            } else if (rawActivity == ActivityType.UNKNOWN || rawActivity == ActivityType.UNCERTAIN) {
+                // When confidence is low, don't keep stale dynamic votes
+                predictionHistory.clear()
             }
 
             val latency = System.currentTimeMillis() - startTime
             inputTensor.close()
             results.close()
+
+            val modelLabel = when (modelType) {
+                MODEL_BINARY_WALKING -> "Binary Invariant (99.86% • Handheld)"
+                MODEL_3_CLASS -> "3-Class (87.43% • Experimental)"
+                MODEL_CNN_LSTM -> "CNN-LSTM (90.74%)"
+                else -> "1D CNN (93.99% • UCI HAR)"
+            }
 
             return ClassificationResult(
                 activityType = smoothedActivity,
@@ -140,7 +184,7 @@ class MotionClassifier(private val context: Context) {
                 probabilities = probabilities.clone(),
                 isUncertain = isUncertain,
                 inferenceTimeMs = latency,
-                modelUsed = if (modelType == MODEL_1D_CNN) "1D CNN (93.99%)" else "CNN-LSTM (90.74%)"
+                modelUsed = modelLabel
             )
 
         } catch (e: Exception) {
@@ -175,6 +219,8 @@ class MotionClassifier(private val context: Context) {
 
     fun close() {
         try {
+            binarySession?.close()
+            threeClassSession?.close()
             cnn1dSession?.close()
             cnnLstmSession?.close()
             env.close()
@@ -185,12 +231,12 @@ class MotionClassifier(private val context: Context) {
 
     private fun fallbackResult(modelType: String): ClassificationResult {
         return ClassificationResult(
-            activityType = ActivityType.UNCERTAIN,
-            rawActivityType = ActivityType.UNCERTAIN,
+            activityType = ActivityType.UNKNOWN,
+            rawActivityType = ActivityType.UNKNOWN,
             confidence = 0f,
             rawConfidence = 0f,
-            logits = FloatArray(6),
-            probabilities = FloatArray(6) { 1f / 6f },
+            logits = FloatArray(2),
+            probabilities = FloatArray(2) { 0.5f },
             isUncertain = true,
             inferenceTimeMs = 0L,
             modelUsed = modelType

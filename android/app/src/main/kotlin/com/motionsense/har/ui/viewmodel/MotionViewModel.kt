@@ -12,6 +12,7 @@ import com.motionsense.har.data.db.MotionSenseDatabase
 import com.motionsense.har.data.model.ActivityRecord
 import com.motionsense.har.data.model.ActivityType
 import com.motionsense.har.ml.MotionClassifier
+import com.motionsense.har.sensor.PhonePlacement
 import com.motionsense.har.sensor.SensorAvailability
 import com.motionsense.har.sensor.SensorCollector
 import com.motionsense.har.sensor.SensorTelemetry
@@ -22,6 +23,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.io.File
 
 data class DailySummary(
     val walkingSec: Long = 0,
@@ -42,7 +44,7 @@ class MotionViewModel(application: Application) : AndroidViewModel(application) 
     val records: StateFlow<List<ActivityRecord>> = database.recordsFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private val _currentActivity = MutableStateFlow(ActivityType.STANDING)
+    private val _currentActivity = MutableStateFlow(ActivityType.UNKNOWN)
     val currentActivity = _currentActivity.asStateFlow()
 
     private val _confidence = MutableStateFlow(0f)
@@ -57,10 +59,10 @@ class MotionViewModel(application: Application) : AndroidViewModel(application) 
     private val _trackingDurationSec = MutableStateFlow(0L)
     val trackingDurationSec = _trackingDurationSec.asStateFlow()
 
-    private val _selectedModel = MutableStateFlow(MotionClassifier.MODEL_1D_CNN)
+    private val _selectedModel = MutableStateFlow(MotionClassifier.MODEL_BINARY_WALKING)
     val selectedModel = _selectedModel.asStateFlow()
 
-    private val _phonePlacement = MutableStateFlow(com.motionsense.har.sensor.PhonePlacement.FRONT_POCKET_PORTRAIT)
+    private val _phonePlacement = MutableStateFlow(PhonePlacement.HANDHELD_PORTRAIT)
     val phonePlacement = _phonePlacement.asStateFlow()
 
     private val _latestResult = MutableStateFlow<com.motionsense.har.ml.ClassificationResult?>(null)
@@ -71,6 +73,25 @@ class MotionViewModel(application: Application) : AndroidViewModel(application) 
 
     private val _dailySummary = MutableStateFlow(DailySummary())
     val dailySummary = _dailySummary.asStateFlow()
+
+    // Sensor Data Recorder State
+    private val _isRecording = MutableStateFlow(false)
+    val isRecording = _isRecording.asStateFlow()
+
+    private val _recordingSampleCount = MutableStateFlow(0L)
+    val recordingSampleCount = _recordingSampleCount.asStateFlow()
+
+    private val _recordingDurationSec = MutableStateFlow(0L)
+    val recordingDurationSec = _recordingDurationSec.asStateFlow()
+
+    private val _recordingLabel = MutableStateFlow("WALKING")
+    val recordingLabel = _recordingLabel.asStateFlow()
+
+    private val _lastSavedRecording = MutableStateFlow<File?>(null)
+    val lastSavedRecording = _lastSavedRecording.asStateFlow()
+
+    private val _savedRecordingsList = MutableStateFlow<List<File>>(emptyList())
+    val savedRecordingsList = _savedRecordingsList.asStateFlow()
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
@@ -100,7 +121,26 @@ class MotionViewModel(application: Application) : AndroidViewModel(application) 
                 viewModelScope.launch {
                     s.latestResult.collect { _latestResult.value = it }
                 }
+                viewModelScope.launch {
+                    s.isRecordingFlow.collect { _isRecording.value = it }
+                }
+                viewModelScope.launch {
+                    s.recordingSampleCount.collect { _recordingSampleCount.value = it }
+                }
+                viewModelScope.launch {
+                    s.recordingDurationSec.collect { _recordingDurationSec.value = it }
+                }
+                viewModelScope.launch {
+                    s.recordingLabel.collect { _recordingLabel.value = it }
+                }
+                viewModelScope.launch {
+                    s.lastSavedRecording.collect { 
+                        _lastSavedRecording.value = it
+                        refreshRecordingsList()
+                    }
+                }
             }
+            refreshRecordingsList()
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
@@ -135,6 +175,7 @@ class MotionViewModel(application: Application) : AndroidViewModel(application) 
             getApplication<Application>().startService(intent)
         }
         trackingService?.setModel(_selectedModel.value)
+        trackingService?.setPlacement(_phonePlacement.value)
         trackingService?.startTracking()
     }
 
@@ -151,9 +192,39 @@ class MotionViewModel(application: Application) : AndroidViewModel(application) 
         trackingService?.setModel(model)
     }
 
-    fun setPlacement(placement: com.motionsense.har.sensor.PhonePlacement) {
+    fun setPlacement(placement: PhonePlacement) {
         _phonePlacement.value = placement
         trackingService?.setPlacement(placement)
+    }
+
+    fun startSensorRecording(label: String) {
+        if (!_isTracking.value) {
+            startTracking()
+        }
+        _recordingLabel.value = label
+        trackingService?.startSensorRecording(label)
+    }
+
+    fun stopSensorRecording(): File? {
+        val file = trackingService?.stopSensorRecording()
+        refreshRecordingsList()
+        return file
+    }
+
+    fun refreshRecordingsList() {
+        trackingService?.let { s ->
+            _savedRecordingsList.value = s.getRecordings()
+        }
+    }
+
+    fun deleteRecording(file: File): Boolean {
+        val ok = trackingService?.deleteRecording(file) ?: file.delete()
+        refreshRecordingsList()
+        return ok
+    }
+
+    fun createShareIntent(file: File): Intent? {
+        return trackingService?.createShareIntent(file)
     }
 
     fun exportDiagnosticWindow(): String? {
@@ -180,7 +251,7 @@ class MotionViewModel(application: Application) : AndroidViewModel(application) 
                         "WALKING" -> walking += r.durationSeconds
                         "WALKING_UPSTAIRS", "WALKING_DOWNSTAIRS" -> stairs += r.durationSeconds
                         "SITTING" -> sitting += r.durationSeconds
-                        "STANDING" -> standing += r.durationSeconds
+                        "STANDING", "NOT_WALKING" -> standing += r.durationSeconds
                         "LAYING" -> laying += r.durationSeconds
                     }
                 }

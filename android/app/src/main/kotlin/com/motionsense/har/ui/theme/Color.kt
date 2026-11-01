@@ -35,12 +35,14 @@ val tertiaryDark = Color(0xFFDCB9F0)
 
 // Activity Highlight Colors
 val ActivityWalking = Color(0xFF0D9488)
+val ActivityNotWalking = Color(0xFF2563EB)
 val ActivityWalkingUpstairs = Color(0xFF14B8A6)
 val ActivityWalkingDownstairs = Color(0xFF2DD4BF)
 val ActivitySitting = Color(0xFF0284C7)
 val ActivityStanding = Color(0xFF38BDF8)
 val ActivityLaying = Color(0xFF6366F1)
 val ActivityUncertain = Color(0xFFF59E0B)
+val ActivityUnknown = Color(0xFF94A3B8)
 
 
 //End - Partial Color List

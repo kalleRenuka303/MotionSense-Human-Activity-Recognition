@@ -41,7 +41,7 @@ class MotionTrackingService : Service() {
     private lateinit var database: MotionSenseDatabase
     private var wakeLock: PowerManager.WakeLock? = null
 
-    private val _currentActivity = MutableStateFlow(ActivityType.STANDING)
+    private val _currentActivity = MutableStateFlow(ActivityType.UNKNOWN)
     val currentActivity = _currentActivity.asStateFlow()
 
     private val _confidence = MutableStateFlow(0f)
@@ -59,7 +59,7 @@ class MotionTrackingService : Service() {
     private val _latestResult = MutableStateFlow<ClassificationResult?>(null)
     val latestResult = _latestResult.asStateFlow()
 
-    private var selectedModel = MotionClassifier.MODEL_1D_CNN
+    private var selectedModel = MotionClassifier.MODEL_BINARY_WALKING
     private var trackingStartTime = 0L
 
     companion object {
@@ -117,6 +117,32 @@ class MotionTrackingService : Service() {
         return sensorCollector.exportDiagnosticWindowToFile()
     }
 
+    val isRecordingFlow get() = sensorCollector.recorder.isRecording
+    val recordingSampleCount get() = sensorCollector.recorder.sampleCount
+    val recordingDurationSec get() = sensorCollector.recorder.durationSec
+    val recordingLabel get() = sensorCollector.recorder.currentLabel
+    val lastSavedRecording get() = sensorCollector.recorder.lastSavedFile
+
+    fun startSensorRecording(label: String): java.io.File {
+        return sensorCollector.recorder.startRecording(label, sensorCollector.placement.title)
+    }
+
+    fun stopSensorRecording(): java.io.File? {
+        return sensorCollector.recorder.stopRecording()
+    }
+
+    fun getRecordings(): List<java.io.File> {
+        return sensorCollector.recorder.getRecordings()
+    }
+
+    fun deleteRecording(file: java.io.File): Boolean {
+        return sensorCollector.recorder.deleteRecording(file)
+    }
+
+    fun createShareIntent(file: java.io.File): Intent {
+        return sensorCollector.recorder.createShareIntent(file)
+    }
+
     fun startTracking() {
         if (_isTracking.value) return
         _isTracking.value = true
@@ -162,7 +188,7 @@ class MotionTrackingService : Service() {
         updateNotification(result)
 
         // Persist activity record if definitive
-        if (!result.isUncertain && result.activityType != ActivityType.UNCERTAIN) {
+        if (!result.isUncertain && result.activityType != ActivityType.UNCERTAIN && result.activityType != ActivityType.UNKNOWN) {
             serviceScope.launch {
                 val now = System.currentTimeMillis()
                 val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
@@ -172,7 +198,7 @@ class MotionTrackingService : Service() {
                         activityName = result.activityType.name,
                         confidence = result.confidence,
                         durationSeconds = 2, // 2.56s window with 1.28s step
-                        modelUsed = if (selectedModel == MotionClassifier.MODEL_CNN_LSTM) "CNN-LSTM" else "1D CNN",
+                        modelUsed = result.modelUsed,
                         dateString = dateFormat.format(Date(now))
                     )
                 )

@@ -12,11 +12,13 @@ data class ActivityRecord(
 
 enum class ActivityType(val displayName: String, val category: String) {
     WALKING("Walking", "Dynamic"),
+    NOT_WALKING("Stationary (Not Walking)", "Static"),
     WALKING_UPSTAIRS("Walking Upstairs", "Dynamic"),
     WALKING_DOWNSTAIRS("Walking Downstairs", "Dynamic"),
     SITTING("Sitting", "Static"),
     STANDING("Standing", "Static"),
     LAYING("Laying", "Static"),
+    UNKNOWN("Detecting...", "Unknown"),
     UNCERTAIN("Uncertain Motion", "Unknown");
 
     companion object {
@@ -28,6 +30,19 @@ enum class ActivityType(val displayName: String, val category: String) {
             4 -> STANDING
             5 -> LAYING
             else -> UNCERTAIN
+        }
+
+        fun fromBinaryIndex(index: Int): ActivityType = when (index) {
+            0 -> WALKING
+            1 -> NOT_WALKING
+            else -> UNKNOWN
+        }
+
+        fun fromThreeClassIndex(index: Int): ActivityType = when (index) {
+            0 -> WALKING
+            1 -> SITTING
+            2 -> STANDING
+            else -> UNKNOWN
         }
     }
 }
