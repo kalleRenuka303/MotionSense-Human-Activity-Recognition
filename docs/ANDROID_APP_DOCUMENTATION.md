@@ -36,8 +36,8 @@ The application natively detects and classifies the 6 standardized physical acti
       ▼                 ▼
 ┌──────────────┐ ┌───────────────────────────────────────────────────────┐
 │SensorCollector│ │ MotionClassifier (ONNX Runtime)                       │
-│- Accel (50Hz)│ │ - CNN-LSTM (96.06% UCI HAR Test Accuracy)             │
-│- Gyro (50Hz) │ │ - 1D CNN (95.76% UCI HAR Test Accuracy)               │
+│- Accel (50Hz)│ │ - 1D CNN (93.99% UCI HAR Test Accuracy)               │
+│- Gyro (50Hz) │ │ - CNN-LSTM (90.74% UCI HAR Test Accuracy)             │
 │- Ring Buffer │ │ - Input: [1, 9, 128] float32 tensor                   │
 │- Normalizer  │ │ - Softmax & Activity Mapping                          │
 └──────────────┘ └───────────────────────────────────────────────────────┘
@@ -80,10 +80,12 @@ Models are embedded directly inside the Android application assets (`app/src/mai
 ### 4.2 Embedded Models & Parity Verification
 Both pre-trained PyTorch deep learning models were exported to ONNX format with strict numerical verification against the original PyTorch weights:
 
-| Model Architecture | Asset Name | File Size | UCI HAR Test Acc | Max Abs Diff (PyTorch vs ONNX) |
+| Model Architecture | Asset Name | File Size | Strict Subject-Independent Test Acc | Max Abs Diff (PyTorch vs ONNX) |
 |---|---|---|---|---|
-| **CNN-LSTM** (Primary) | `cnn_lstm.onnx` | 1,034 KB | **96.06%** | $3.22 \times 10^{-6}$ (< 1e-4) |
-| **1D CNN** (Baseline) | `cnn_1d.onnx` | 434 KB | **95.76%** | $3.81 \times 10^{-6}$ (< 1e-4) |
+| **1D CNN** (Baseline) | `cnn_1d.onnx` | 434 KB | **93.99%** | $3.81 \times 10^{-6}$ (< 1e-4) |
+| **CNN-LSTM** (Primary) | `cnn_lstm.onnx` | 1,034 KB | **90.74%** | $3.22 \times 10^{-6}$ (< 1e-4) |
+
+*Note on Accuracies: In literature, randomly shuffled splits (with subject leakage across train and test) frequently report inflated accuracies of ~95%–96%. In contrast, MotionSense strictly enforces the official subject-independent benchmark protocol (unseen test subjects 2, 4, 9, 10, 12, 13, 18, 20, 24), yielding genuine, non-overfitted test accuracies of 93.99% (1D CNN) and 90.74% (CNN-LSTM).*
 
 *The maximum numerical difference between the PyTorch float32 model outputs and the on-device ONNX Runtime outputs across randomized and real test tensors is $< 4 \times 10^{-6}$, guaranteeing zero loss of classification fidelity.*
 

@@ -1,0 +1,76 @@
+{
+  "1D_CNN": {
+    "per_class": {
+      "WALKING": {
+        "max_abs_diff": 1.9073486328125e-06,
+        "agreement": "10/10 (100%)",
+        "samples_tested": 10
+      },
+      "WALKING_UPSTAIRS": {
+        "max_abs_diff": 1.430511474609375e-06,
+        "agreement": "10/10 (100%)",
+        "samples_tested": 10
+      },
+      "WALKING_DOWNSTAIRS": {
+        "max_abs_diff": 9.5367431640625e-07,
+        "agreement": "10/10 (100%)",
+        "samples_tested": 10
+      },
+      "SITTING": {
+        "max_abs_diff": 1.1920928955078125e-06,
+        "agreement": "10/10 (100%)",
+        "samples_tested": 10
+      },
+      "STANDING": {
+        "max_abs_diff": 3.337860107421875e-06,
+        "agreement": "10/10 (100%)",
+        "samples_tested": 10
+      },
+      "LAYING": {
+        "max_abs_diff": 2.86102294921875e-06,
+        "agreement": "10/10 (100%)",
+        "samples_tested": 10
+      }
+    },
+    "overall_max_diff": 3.337860107421875e-06,
+    "agreement_count": 60,
+    "total_samples": 60
+  },
+  "CNN_LSTM": {
+    "per_class": {
+      "WALKING": {
+        "max_abs_diff": 9.5367431640625e-07,
+        "agreement": "10/10 (100%)",
+        "samples_tested": 10
+      },
+      "WALKING_UPSTAIRS": {
+        "max_abs_diff": 1.430511474609375e-06,
+        "agreement": "10/10 (100%)",
+        "samples_tested": 10
+      },
+      "WALKING_DOWNSTAIRS": {
+        "max_abs_diff": 9.5367431640625e-07,
+        "agreement": "10/10 (100%)",
+        "samples_tested": 10
+      },
+      "SITTING": {
+        "max_abs_diff": 1.430511474609375e-06,
+        "agreement": "10/10 (100%)",
+        "samples_tested": 10
+      },
+      "STANDING": {
+        "max_abs_diff": 1.430511474609375e-06,
+        "agreement": "10/10 (100%)",
+        "samples_tested": 10
+      },
+      "LAYING": {
+        "max_abs_diff": 1.9073486328125e-06,
+        "agreement": "10/10 (100%)",
+        "samples_tested": 10
+      }
+    },
+    "overall_max_diff": 1.9073486328125e-06,
+    "agreement_count": 60,
+    "total_samples": 60
+  }
+}
