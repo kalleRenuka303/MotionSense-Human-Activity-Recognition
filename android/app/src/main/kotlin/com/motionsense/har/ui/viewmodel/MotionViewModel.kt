@@ -57,8 +57,14 @@ class MotionViewModel(application: Application) : AndroidViewModel(application) 
     private val _trackingDurationSec = MutableStateFlow(0L)
     val trackingDurationSec = _trackingDurationSec.asStateFlow()
 
-    private val _selectedModel = MutableStateFlow(MotionClassifier.MODEL_CNN_LSTM)
+    private val _selectedModel = MutableStateFlow(MotionClassifier.MODEL_1D_CNN)
     val selectedModel = _selectedModel.asStateFlow()
+
+    private val _phonePlacement = MutableStateFlow(com.motionsense.har.sensor.PhonePlacement.FRONT_POCKET_PORTRAIT)
+    val phonePlacement = _phonePlacement.asStateFlow()
+
+    private val _latestResult = MutableStateFlow<com.motionsense.har.ml.ClassificationResult?>(null)
+    val latestResult = _latestResult.asStateFlow()
 
     private val _sensorAvailability = MutableStateFlow<SensorAvailability?>(null)
     val sensorAvailability = _sensorAvailability.asStateFlow()
@@ -73,6 +79,9 @@ class MotionViewModel(application: Application) : AndroidViewModel(application) 
             isBound = true
 
             trackingService?.let { s ->
+                s.setPlacement(_phonePlacement.value)
+                s.setModel(_selectedModel.value)
+
                 viewModelScope.launch {
                     s.currentActivity.collect { _currentActivity.value = it }
                 }
@@ -87,6 +96,9 @@ class MotionViewModel(application: Application) : AndroidViewModel(application) 
                 }
                 viewModelScope.launch {
                     s.trackingDurationSec.collect { _trackingDurationSec.value = it }
+                }
+                viewModelScope.launch {
+                    s.latestResult.collect { _latestResult.value = it }
                 }
             }
         }
@@ -137,6 +149,15 @@ class MotionViewModel(application: Application) : AndroidViewModel(application) 
     fun setModel(model: String) {
         _selectedModel.value = model
         trackingService?.setModel(model)
+    }
+
+    fun setPlacement(placement: com.motionsense.har.sensor.PhonePlacement) {
+        _phonePlacement.value = placement
+        trackingService?.setPlacement(placement)
+    }
+
+    fun exportDiagnosticWindow(): String? {
+        return trackingService?.exportDiagnosticWindow()
     }
 
     fun clearHistory() {

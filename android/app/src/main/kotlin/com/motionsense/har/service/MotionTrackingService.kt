@@ -56,7 +56,10 @@ class MotionTrackingService : Service() {
     private val _trackingDurationSec = MutableStateFlow(0L)
     val trackingDurationSec = _trackingDurationSec.asStateFlow()
 
-    private var selectedModel = MotionClassifier.MODEL_CNN_LSTM
+    private val _latestResult = MutableStateFlow<ClassificationResult?>(null)
+    val latestResult = _latestResult.asStateFlow()
+
+    private var selectedModel = MotionClassifier.MODEL_1D_CNN
     private var trackingStartTime = 0L
 
     companion object {
@@ -106,6 +109,14 @@ class MotionTrackingService : Service() {
         selectedModel = model
     }
 
+    fun setPlacement(placement: com.motionsense.har.sensor.PhonePlacement) {
+        sensorCollector.placement = placement
+    }
+
+    fun exportDiagnosticWindow(): String? {
+        return sensorCollector.exportDiagnosticWindowToFile()
+    }
+
     fun startTracking() {
         if (_isTracking.value) return
         _isTracking.value = true
@@ -144,6 +155,7 @@ class MotionTrackingService : Service() {
             modelType = selectedModel
         )
 
+        _latestResult.value = result
         _currentActivity.value = result.activityType
         _confidence.value = result.confidence
 

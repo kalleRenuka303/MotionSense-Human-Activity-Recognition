@@ -1,5 +1,6 @@
 package com.motionsense.har.ui.screens
 
+import android.widget.Toast
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -16,24 +17,30 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.motionsense.har.data.model.ActivityType
 import com.motionsense.har.ml.MotionClassifier
+import com.motionsense.har.sensor.PhonePlacement
 import com.motionsense.har.ui.theme.*
 import com.motionsense.har.ui.viewmodel.MotionViewModel
 
 @Composable
 fun HomeScreen(viewModel: MotionViewModel) {
+    val context = LocalContext.current
     val currentActivity by viewModel.currentActivity.collectAsState()
     val confidence by viewModel.confidence.collectAsState()
+    val telemetry by viewModel.telemetry.collectAsState()
     val isTracking by viewModel.isTracking.collectAsState()
     val durationSec by viewModel.trackingDurationSec.collectAsState()
-    val telemetry by viewModel.telemetry.collectAsState()
     val selectedModel by viewModel.selectedModel.collectAsState()
-    val sensorAvailability by viewModel.sensorAvailability.collectAsState()
+    val placement by viewModel.phonePlacement.collectAsState()
+    val latestResult by viewModel.latestResult.collectAsState()
+
+    var showDiagnostics by remember { mutableStateOf(false) }
 
     val activityColor by animateColorAsState(
         targetValue = when (currentActivity) {
@@ -44,13 +51,14 @@ fun HomeScreen(viewModel: MotionViewModel) {
             ActivityType.STANDING -> ActivityStanding
             ActivityType.LAYING -> ActivityLaying
             ActivityType.UNCERTAIN -> ActivityUncertain
-        }, label = "activityColor"
+        },
+        label = "activityColor"
     )
 
     val activityIcon: ImageVector = when (currentActivity) {
         ActivityType.WALKING -> Icons.Default.DirectionsWalk
-        ActivityType.WALKING_UPSTAIRS -> Icons.Default.NordicWalking
-        ActivityType.WALKING_DOWNSTAIRS -> Icons.Default.DirectionsRun
+        ActivityType.WALKING_UPSTAIRS -> Icons.Default.DirectionsRun
+        ActivityType.WALKING_DOWNSTAIRS -> Icons.Default.DirectionsWalk
         ActivityType.SITTING -> Icons.Default.AirlineSeatReclineNormal
         ActivityType.STANDING -> Icons.Default.AccessibilityNew
         ActivityType.LAYING -> Icons.Default.Hotel
@@ -64,61 +72,13 @@ fun HomeScreen(viewModel: MotionViewModel) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // App Header
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column {
-                Text(
-                    text = "MotionSense",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Text(
-                    text = "Continuous On-Device HAR",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            // Live status badge
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = if (isTracking) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                modifier = Modifier.padding(4.dp)
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .clip(CircleShape)
-                            .background(if (isTracking) Color(0xFF10B981) else Color(0xFF94A3B8))
-                    )
-                    Text(
-                        text = if (isTracking) "TRACKING" else "IDLE",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isTracking) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
-
-        // Live Recognized Activity Main Card
+        // Main Live Activity Display Card
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(24.dp),
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-            ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            )
         ) {
             Column(
                 modifier = Modifier
@@ -130,29 +90,37 @@ fun HomeScreen(viewModel: MotionViewModel) {
                 // Activity Icon Circle
                 Box(
                     modifier = Modifier
-                        .size(96.dp)
+                        .size(110.dp)
                         .clip(CircleShape)
-                        .background(activityColor.copy(alpha = 0.2f)),
+                        .background(activityColor.copy(alpha = 0.15f)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = activityIcon,
-                        contentDescription = currentActivity.displayName,
-                        tint = activityColor,
-                        modifier = Modifier.size(54.dp)
-                    )
+                    Box(
+                        modifier = Modifier
+                            .size(80.dp)
+                            .clip(CircleShape)
+                            .background(activityColor.copy(alpha = 0.25f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = activityIcon,
+                            contentDescription = currentActivity.displayName,
+                            tint = activityColor,
+                            modifier = Modifier.size(46.dp)
+                        )
+                    }
                 }
 
-                // Current Activity Title
+                // Activity Name & Category
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        text = currentActivity.displayName.uppercase(),
-                        style = MaterialTheme.typography.headlineSmall,
+                        text = currentActivity.displayName,
+                        style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.ExtraBold,
                         color = activityColor
                     )
                     Text(
-                        text = currentActivity.category + " Motion Profile",
+                        text = "${currentActivity.category} Motion • ${placement.title}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -190,7 +158,7 @@ fun HomeScreen(viewModel: MotionViewModel) {
                     )
                 }
 
-                // Tracking Duration
+                // Tracking Duration & Buffer Status
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceAround
@@ -213,13 +181,14 @@ fun HomeScreen(viewModel: MotionViewModel) {
 
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
-                            text = "Buffer Windows",
+                            text = "Sampling Rate",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            text = "${telemetry.samplesCollected / 64} processed",
+                            text = "${String.format("%.1f", telemetry.samplingRateHz)} Hz",
                             style = MaterialTheme.typography.titleMedium,
+                            fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -227,47 +196,110 @@ fun HomeScreen(viewModel: MotionViewModel) {
             }
         }
 
-        // Tracking Controls (Start / Stop)
-        Row(
+        // Start / Stop Tracking Action Buttons
+        if (!isTracking) {
+            Button(
+                onClick = { viewModel.startTracking() },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = ActivityWalking)
+            ) {
+                Icon(Icons.Default.PlayArrow, contentDescription = "Start")
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "START TRACKING",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        } else {
+            Button(
+                onClick = { viewModel.stopTracking() },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+            ) {
+                Icon(Icons.Default.Stop, contentDescription = "Stop")
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "STOP TRACKING",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+
+        // Phone Placement Selector (Root Cause Fix for Walking -> Laying)
+        Card(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            shape = RoundedCornerShape(16.dp)
         ) {
-            if (!isTracking) {
-                Button(
-                    onClick = { viewModel.startTracking() },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = ActivityWalking
-                    )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = "Start")
-                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "START TRACKING",
-                        style = MaterialTheme.typography.titleMedium,
+                        text = "Phone Placement (Orientation)",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "CRITICAL",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = ActivityWalking,
                         fontWeight = FontWeight.Bold
                     )
                 }
-            } else {
-                Button(
-                    onClick = { viewModel.stopTracking() },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error
-                    )
+
+                Text(
+                    text = "UCI HAR was recorded with a horizontal waist phone. Select your placement to align sensor axes to the model reference frame:",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Icon(Icons.Default.Stop, contentDescription = "Stop")
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "STOP TRACKING",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                    FilterChip(
+                        selected = placement == PhonePlacement.FRONT_POCKET_PORTRAIT,
+                        onClick = { viewModel.setPlacement(PhonePlacement.FRONT_POCKET_PORTRAIT) },
+                        label = { Text("Front Pocket", fontSize = 12.sp) },
+                        leadingIcon = if (placement == PhonePlacement.FRONT_POCKET_PORTRAIT) {
+                            { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }
+                        } else null,
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    FilterChip(
+                        selected = placement == PhonePlacement.WAIST_HOLSTER_LANDSCAPE,
+                        onClick = { viewModel.setPlacement(PhonePlacement.WAIST_HOLSTER_LANDSCAPE) },
+                        label = { Text("Waist Belt", fontSize = 12.sp) },
+                        leadingIcon = if (placement == PhonePlacement.WAIST_HOLSTER_LANDSCAPE) {
+                            { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }
+                        } else null,
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    FilterChip(
+                        selected = placement == PhonePlacement.HANDHELD_PORTRAIT,
+                        onClick = { viewModel.setPlacement(PhonePlacement.HANDHELD_PORTRAIT) },
+                        label = { Text("Handheld", fontSize = 12.sp) },
+                        leadingIcon = if (placement == PhonePlacement.HANDHELD_PORTRAIT) {
+                            { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }
+                        } else null,
+                        modifier = Modifier.weight(1f)
                     )
                 }
             }
@@ -295,20 +327,20 @@ fun HomeScreen(viewModel: MotionViewModel) {
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     FilterChip(
-                        selected = selectedModel == MotionClassifier.MODEL_CNN_LSTM,
-                        onClick = { viewModel.setModel(MotionClassifier.MODEL_CNN_LSTM) },
-                        label = { Text("CNN-LSTM (Research)") },
-                        leadingIcon = if (selectedModel == MotionClassifier.MODEL_CNN_LSTM) {
+                        selected = selectedModel == MotionClassifier.MODEL_1D_CNN,
+                        onClick = { viewModel.setModel(MotionClassifier.MODEL_1D_CNN) },
+                        label = { Text("1D CNN (93.99% • Fast)") },
+                        leadingIcon = if (selectedModel == MotionClassifier.MODEL_1D_CNN) {
                             { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
                         } else null,
                         modifier = Modifier.weight(1f)
                     )
 
                     FilterChip(
-                        selected = selectedModel == MotionClassifier.MODEL_1D_CNN,
-                        onClick = { viewModel.setModel(MotionClassifier.MODEL_1D_CNN) },
-                        label = { Text("1D CNN (Fast)") },
-                        leadingIcon = if (selectedModel == MotionClassifier.MODEL_1D_CNN) {
+                        selected = selectedModel == MotionClassifier.MODEL_CNN_LSTM,
+                        onClick = { viewModel.setModel(MotionClassifier.MODEL_CNN_LSTM) },
+                        label = { Text("CNN-LSTM (90.74%)") },
+                        leadingIcon = if (selectedModel == MotionClassifier.MODEL_CNN_LSTM) {
                             { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
                         } else null,
                         modifier = Modifier.weight(1f)
@@ -317,97 +349,144 @@ fun HomeScreen(viewModel: MotionViewModel) {
             }
         }
 
-        // Live Sensor Telemetry Card
-        Card(
+        // Toggle Sensor Diagnostics Mode (Phase 4 requirement)
+        OutlinedButton(
+            onClick = { showDiagnostics = !showDiagnostics },
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp)
+            shape = RoundedCornerShape(12.dp)
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+            Icon(
+                if (showDiagnostics) Icons.Default.VisibilityOff else Icons.Default.BugReport,
+                contentDescription = null
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(if (showDiagnostics) "Hide Sensor Diagnostics" else "Show Sensor Diagnostics (Phase 4)")
+        }
+
+        // PHASE 4: Complete Sensor Diagnostics Panel
+        if (showDiagnostics) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                )
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
-                        text = "Live Sensor Signals (50 Hz)",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "Buffer: ${telemetry.bufferFillPercent}%",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontFamily = FontFamily.Monospace,
+                        text = "🔬 SENSOR & ML DIAGNOSTICS",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
                     )
-                }
 
-                // Accelerometer readings (g)
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        text = "Total Acceleration (g = 9.81 m/s²):",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    // Timing & Jitter
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        TelemetryAxis(label = "X", value = telemetry.totalAccX)
-                        TelemetryAxis(label = "Y", value = telemetry.totalAccY)
-                        TelemetryAxis(label = "Z", value = telemetry.totalAccZ)
+                        Text(text = "Sampling: ${String.format("%.1f", telemetry.samplingRateHz)} Hz", fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                        Text(text = "Jitter: ${String.format("%.2f", telemetry.timestampJitterMs)} ms", fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                        Text(text = "Missing: ${telemetry.missingSamples}", fontSize = 12.sp, fontFamily = FontFamily.Monospace)
                     }
-                }
 
-                Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    HorizontalDivider()
 
-                // Gyroscope readings (rad/s)
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        text = "Body Angular Velocity (rad/s):",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Row(
+                    // Gravity & Body Acceleration (Butterworth 0.3 Hz output)
+                    Text(text = "Extracted Gravity (0.3 Hz Butterworth):", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("gx: ${String.format("%+.2f", telemetry.gravityX)}g", fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                        Text("gy: ${String.format("%+.2f", telemetry.gravityY)}g", fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                        Text("gz: ${String.format("%+.2f", telemetry.gravityZ)}g", fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                    }
+
+                    Text(text = "Body Acceleration (Total - Gravity):", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("bx: ${String.format("%+.2f", telemetry.bodyAccX)}g", fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                        Text("by: ${String.format("%+.2f", telemetry.bodyAccY)}g", fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                        Text("bz: ${String.format("%+.2f", telemetry.bodyAccZ)}g", fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                    }
+
+                    HorizontalDivider()
+
+                    // Model Input Tensor Channels (0..8) Min / Max
+                    Text(text = "Model Input Tensor [1, 128, 9] Min / Max:", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        for (i in 0 until 9) {
+                            val name = when (i) {
+                                0 -> "total_acc_x"
+                                1 -> "total_acc_y"
+                                2 -> "total_acc_z"
+                                3 -> "body_acc_x"
+                                4 -> "body_acc_y"
+                                5 -> "body_acc_z"
+                                6 -> "gyro_x"
+                                7 -> "gyro_y"
+                                else -> "gyro_z"
+                            }
+                            val minV = telemetry.channelMin.getOrNull(i) ?: 0f
+                            val maxV = telemetry.channelMax.getOrNull(i) ?: 0f
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Ch $i ($name):", fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                                Text(
+                                    "[${if (minV == Float.POSITIVE_INFINITY) "—" else String.format("%+.2f", minV)} .. ${if (maxV == Float.NEGATIVE_INFINITY) "—" else String.format("%+.2f", maxV)}]",
+                                    fontSize = 11.sp,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        }
+                    }
+
+                    HorizontalDivider()
+
+                    // Model Class Probabilities & Logits
+                    latestResult?.let { res ->
+                        Text(text = "Model Probabilities (${res.modelUsed}):", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            val labels = listOf("WALKING", "UPSTAIRS", "DOWNSTAIRS", "SITTING", "STANDING", "LAYING")
+                            for (idx in labels.indices) {
+                                val p = res.probabilities.getOrNull(idx) ?: 0f
+                                val logit = res.logits.getOrNull(idx) ?: 0f
+                                Column {
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                        Text("${labels[idx]}:", fontSize = 11.sp)
+                                        Text("${(p * 100).toInt()}% (logit: ${String.format("%+.1f", logit)})", fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                                    }
+                                    LinearProgressIndicator(
+                                        progress = { p },
+                                        modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp))
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    HorizontalDivider()
+
+                    // Export Diagnostics Action Button
+                    Button(
+                        onClick = {
+                            val path = viewModel.exportDiagnosticWindow()
+                            if (path != null) {
+                                Toast.makeText(context, "Saved window to:\n$path", Toast.LENGTH_LONG).show()
+                            } else {
+                                Toast.makeText(context, "No completed window yet. Start tracking first!", Toast.LENGTH_SHORT).show()
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
                     ) {
-                        TelemetryAxis(label = "X", value = telemetry.gyroX)
-                        TelemetryAxis(label = "Y", value = telemetry.gyroY)
-                        TelemetryAxis(label = "Z", value = telemetry.gyroZ)
+                        Icon(Icons.Default.Save, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Save Diagnostic Window to File")
                     }
                 }
             }
-        }
-    }
-}
-
-@Composable
-fun TelemetryAxis(label: String, value: Float) {
-    Surface(
-        shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-        modifier = Modifier.width(100.dp)
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                text = "$label:",
-                fontWeight = FontWeight.Bold,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Text(
-                text = String.format("%+.2f", value),
-                fontFamily = FontFamily.Monospace,
-                style = MaterialTheme.typography.labelSmall
-            )
         }
     }
 }

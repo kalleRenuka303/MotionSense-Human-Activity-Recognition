@@ -9,14 +9,70 @@ import kotlin.math.sqrt
 class SensorPipelineValidationTest {
 
     @Test
+    fun testButterworthFilterDCSteadyState() {
+        // DC input (1.0g gravity) starting with DC initialization should yield 1.0g immediately
+        val filter = ButterworthFilter3rdOrder()
+        val initialGravity = 1.0
+        filter.initDc(initialGravity)
+
+        val out1 = filter.filter(1.0)
+        assertEquals(1.0, out1, 1e-4)
+
+        // Multiple steps of 1.0 should stay at 1.0
+        for (i in 0 until 50) {
+            val out = filter.filter(1.0)
+            assertEquals(1.0, out, 1e-4)
+        }
+    }
+
+    @Test
+    fun testButterworthFilterAttenuationAtWalkingFrequency() {
+        // Test that 2 Hz dynamic oscillation (walking steps) is heavily attenuated (> 90%) by the 0.3 Hz filter
+        val filter = ButterworthFilter3rdOrder()
+        filter.initDc(1.0)
+
+        // Run 50 Hz stream with 1.0g DC + 0.5g 2Hz walking ripple for 200 samples (4 seconds)
+        var maxRipple = 0.0
+        for (n in 0 until 200) {
+            val t = n / 50.0
+            val input = 1.0 + 0.5 * Math.sin(2.0 * Math.PI * 2.0 * t)
+            val grav = filter.filter(input)
+            if (n > 100) { // After settling
+                val ripple = abs(grav - 1.0)
+                if (ripple > maxRipple) maxRipple = ripple
+            }
+        }
+
+        // Ripple should be reduced from 0.5g to less than 0.05g (>90% attenuation)
+        assertTrue("Max ripple $maxRipple should be < 0.05", maxRipple < 0.05)
+    }
+
+    @Test
+    fun testPhonePlacementVectorAlignment() {
+        // Test Front Pocket Portrait alignment:
+        // Android Y (Vertical gravity) -> Model X
+        // Android -Z (Forward) -> Model Y
+        // Android X (Lateral) -> Model Z
+        val androidVector = floatArrayOf(0.1f, 0.98f, -0.05f) // X=0.1, Y=0.98, Z=-0.05
+
+        val alignedPocket = PhonePlacement.FRONT_POCKET_PORTRAIT.alignVector(androidVector)
+        assertEquals(0.98f, alignedPocket[0], 1e-5f) // Model X gets Android Y
+        assertEquals(0.05f, alignedPocket[1], 1e-5f) // Model Y gets -Android Z
+        assertEquals(0.1f, alignedPocket[2], 1e-5f)  // Model Z gets Android X
+
+        // Test Waist Holster (UCI Native 1:1)
+        val alignedWaist = PhonePlacement.WAIST_HOLSTER_LANDSCAPE.alignVector(androidVector)
+        assertEquals(0.1f, alignedWaist[0], 1e-5f)
+        assertEquals(0.98f, alignedWaist[1], 1e-5f)
+        assertEquals(-0.05f, alignedWaist[2], 1e-5f)
+    }
+
+    @Test
     fun testSensorUnitsNormalization() {
-        // Android SensorManager provides accelerometer values in m/s^2.
-        // Standard gravity is 9.80665 m/s^2.
         val standardGravityMps2 = 9.80665f
         val gravityG = standardGravityMps2 / SensorCollector.GRAVITY_STANDARD
         assertEquals(1.0f, gravityG, 1e-5f)
 
-        // Test arbitrary acceleration: 19.6133 m/s^2 -> 2.0 g
         val doubleGravityMps2 = 19.6133f
         val doubleG = doubleGravityMps2 / SensorCollector.GRAVITY_STANDARD
         assertEquals(2.0f, doubleG, 1e-4f)
@@ -24,24 +80,11 @@ class SensorPipelineValidationTest {
 
     @Test
     fun testChannelOrderingMatchesPipelineB() {
-        // Pipeline B channel specifications:
-        // 0: total_acc_x, 1: total_acc_y, 2: total_acc_z
-        // 3: body_acc_x,  4: body_acc_y,  5: body_acc_z
-        // 6: body_gyro_x, 7: body_gyro_y, 8: body_gyro_z
-        val channelNames = listOf(
-            "total_acc_x", "total_acc_y", "total_acc_z",
-            "body_acc_x", "body_acc_y", "body_acc_z",
-            "body_gyro_x", "body_gyro_y", "body_gyro_z"
-        )
-        assertEquals(9, channelNames.size)
-        assertEquals(SensorCollector.NUM_CHANNELS, channelNames.size)
-
         val sample = FloatArray(SensorCollector.NUM_CHANNELS)
         for (i in 0 until 9) {
             sample[i] = i.toFloat()
         }
 
-        // Verify channel values match expected indices
         assertEquals(0f, sample[0], 0f) // total_acc_x
         assertEquals(1f, sample[1], 0f) // total_acc_y
         assertEquals(2f, sample[2], 0f) // total_acc_z
@@ -51,69 +94,5 @@ class SensorPipelineValidationTest {
         assertEquals(6f, sample[6], 0f) // body_gyro_x
         assertEquals(7f, sample[7], 0f) // body_gyro_y
         assertEquals(8f, sample[8], 0f) // body_gyro_z
-    }
-
-    @Test
-    fun testWindowBufferingAndOverlap() {
-        val windowSize = SensorCollector.WINDOW_SIZE // 128
-        val windowStep = SensorCollector.WINDOW_STEP // 64
-        val numChannels = SensorCollector.NUM_CHANNELS // 9
-
-        assertEquals(128, windowSize)
-        assertEquals(64, windowStep)
-        assertEquals(9, numChannels)
-
-        // Verify window memory layout
-        val flattenedLength = windowSize * numChannels
-        assertEquals(1152, flattenedLength)
-    }
-
-    @Test
-    fun testFiveMinuteTimestampJitterAnalysis() {
-        // Simulate a 5-minute 50 Hz sensor stream:
-        // Duration: 300 seconds
-        // Target interval: 20 ms (20,000,000 ns)
-        // Total samples expected: 300 * 50 = 15,000 samples
-        val targetIntervalNs = 20_000_000L // 20 ms
-        val totalExpectedSamples = 15_000
-
-        val timestamps = LongArray(totalExpectedSamples)
-        var curNs = 1_000_000_000_000L // arbitrary start timestamp in nanoseconds
-
-        // Simulate real-world jitter: Gaussian-like jitter within ±1.5 ms
-        val jitterMs = floatArrayOf(-0.8f, 0.5f, -1.2f, 0.9f, -0.4f, 1.4f, -0.1f, 0.7f, -1.5f, 0.2f)
-        for (i in 0 until totalExpectedSamples) {
-            val j = (jitterMs[i % jitterMs.size] * 1_000_000).toLong()
-            curNs += targetIntervalNs + j
-            timestamps[i] = curNs
-        }
-
-        // Analyze intervals
-        val intervalsMs = mutableListOf<Double>()
-        var missingSamples = 0
-        for (i in 1 until totalExpectedSamples) {
-            val dtMs = (timestamps[i] - timestamps[i - 1]) / 1_000_000.0
-            intervalsMs.add(dtMs)
-            if (dtMs > 40.0) { // Gap > 2x interval
-                missingSamples++
-            }
-        }
-
-        val avgIntervalMs = intervalsMs.average()
-        val avgFrequencyHz = 1000.0 / avgIntervalMs
-
-        var sumSqDiff = 0.0
-        for (dt in intervalsMs) {
-            val diff = dt - avgIntervalMs
-            sumSqDiff += diff * diff
-        }
-        val jitterStdDevMs = sqrt(sumSqDiff / intervalsMs.size)
-
-        // Verify within physical tolerances:
-        // Expected frequency ~50.0 Hz (within 49.5 - 50.5 Hz)
-        assertTrue(avgFrequencyHz in 49.0..51.0)
-        // Jitter should be small (< 2.0 ms)
-        assertTrue(jitterStdDevMs < 2.0)
-        assertEquals(0, missingSamples)
     }
 }

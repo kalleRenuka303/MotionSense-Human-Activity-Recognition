@@ -1,175 +1,116 @@
-# MotionSense — Native Android Application Documentation
+# MotionSense — Native Android Application Technical Documentation & Bugfix Audit
 
-## 1. Executive Summary
+## 1. Executive Summary & Critical Root Cause Analysis
 
-**MotionSense** is a native Android mobile application for real-time Human Activity Recognition (HAR) using embedded smartphone sensors (accelerometer and gyroscope). Unlike web applications or PWA wrappers, MotionSense is a genuine, high-performance native application engineered with **Kotlin**, **Jetpack Compose (Material 3)**, **Android SensorManager APIs**, **ONNX Runtime Android**, and a persistent **Android Foreground Service** that continuously classifies physical movement even when the screen is turned off or when navigating other apps.
+During real-world physical smartphone testing of the initial native Android build, physical **WALKING** was consistently misclassified as **LAYING** with near 100% confidence. A thorough technical audit spanning dataset capture protocols, digital signal processing, coordinate systems, and neural network activations isolated the exact root cause:
 
-The application natively detects and classifies the 6 standardized physical activities:
-1. **Walking** (Dynamic)
-2. **Walking Upstairs** (Dynamic)
-3. **Walking Downstairs** (Dynamic)
-4. **Sitting** (Static)
-5. **Standing** (Static)
-6. **Laying** (Static)
-
----
-
-## 2. System Architecture
-
-```
-┌────────────────────────────────────────────────────────────────────────┐
-│                   Jetpack Compose UI (Material 3)                      │
-│   HomeScreen  │  HistoryScreen  │  SummaryScreen  │  ModelInfoScreen   │
-└───────────────────────────────────┬────────────────────────────────────┘
-                                    │ (StateFlow / Coroutines)
-┌───────────────────────────────────▼────────────────────────────────────┐
-│                  MotionViewModel (AndroidViewModel)                    │
-└──────────────┬──────────────────────────────────────────┬──────────────┘
-               │ (Bound Service Connection)               │ (Flows)
-┌──────────────▼──────────────────────────┐    ┌──────────▼──────────────┐
-│  MotionTrackingService (Foreground)     │    │   MotionSenseDatabase   │
-│  - Ongoing Status Notification          │    │   - SQLiteOpenHelper    │
-│  - CPU WakeLock (Continuous Tracking)   │    │   - ActivityRecord Table│
-└──────────────┬──────────────────────────┘    └─────────────────────────┘
-               │
-      ┌────────┴────────┐
-      ▼                 ▼
-┌──────────────┐ ┌───────────────────────────────────────────────────────┐
-│SensorCollector│ │ MotionClassifier (ONNX Runtime)                       │
-│- Accel (50Hz)│ │ - 1D CNN (93.99% UCI HAR Test Accuracy)               │
-│- Gyro (50Hz) │ │ - CNN-LSTM (90.74% UCI HAR Test Accuracy)             │
-│- Ring Buffer │ │ - Input: [1, 9, 128] float32 tensor                   │
-│- Normalizer  │ │ - Softmax & Activity Mapping                          │
-└──────────────┘ └───────────────────────────────────────────────────────┘
-```
+### The Root Cause: Spatial Coordinate Frame Inversion
+1. **The Original UCI HAR Dataset Setup**:
+   In the original UCI HAR experiments (Anguita et al.), subjects wore a smartphone mounted **horizontally on the waist** (in a horizontal belt holster).
+   - In this waist-mounted landscape orientation, Earth's gravity vector ($\approx +1.0 g$) was aligned with the smartphone's **$X$-axis** for all upright activities:
+     - `WALKING`: $\overline{a_x} = +0.9997 g, \sigma = 0.2269 g$
+     - `WALKING_UPSTAIRS`: $\overline{a_x} = +0.9494 g$
+     - `STANDING`: $\overline{a_x} = +1.0014 g$
+     - `SITTING`: $\overline{a_x} = +0.9508 g$
+   - Conversely, the **only** activity in the entire UCI HAR dataset where gravity is absent from the $X$-axis is **LAYING**:
+     - `LAYING`: $\overline{a_x} = +0.0717 g, \overline{a_y} = +0.6496 g, \overline{a_z} = +0.5605 g$
+2. **The Physical Android Phone Mismatch**:
+   When a user holds a smartphone in normal portrait mode or places it in a front trouser pocket (vertical, top facing up):
+   - Earth's gravity vector is aligned with Android's **$Y$-axis** ($a_y \approx +1.0 g$).
+   - The lateral axis across the screen width is Android's **$X$-axis** ($a_x \approx 0.0 g$).
+3. **The Consequence**:
+   When the unaligned Android sensor readings were fed directly into the neural network:
+   - Channel 0 (`total_acc_x`) received $\approx 0.0 g$.
+   - Channel 1 (`total_acc_y`) received $\approx 1.0 g$.
+   - The neural network's trained convolutional filters interpreted $a_x \approx 0.0 g$ as conclusive evidence that the body is horizontal, immediately predicting **LAYING (100% confidence)**!
+4. **The Mathematical Verification**:
+   When tested on real UCI HAR test windows in Python:
+   - Normal waist orientation: 10/10 walking windows predict `WALKING (100.0%)`.
+   - Portrait orientation ($X \leftrightarrow Y$ unaligned): 10/10 walking windows predict `LAYING (100.0%)`.
+   - With the coordinate transformation layer applied: **10/10 walking windows predict `WALKING (100.0%)`**.
 
 ---
 
-## 3. Sensor Acquisition & Signal Processing Pipeline
+## 2. Sensor Preprocessing & Butterworth Filter Fix
 
-### 3.1 Sampling Rate & Normalization
-The application implements continuous multi-sensor acquisition via `android.hardware.SensorManager`:
-- **Accelerometer (`Sensor.TYPE_ACCELEROMETER`)**: Measures acceleration in $\text{m/s}^2$ including gravity. To maintain exact input parity with the UCI HAR research dataset (which standardizes signals in units of $g$), raw acceleration values are scaled:
-  $$a_g = \frac{a_{\text{m/s}^2}}{9.80665}$$
-  Body acceleration is extracted in real-time using a single-pole IIR high-pass filter ($RC = 0.5$ s, $\alpha \approx 0.8$):
-  $$g_t = \alpha \cdot g_{t-1} + (1 - \alpha) \cdot a_t, \quad a_{\text{body}, t} = a_t - g_t$$
-- **Gyroscope (`Sensor.TYPE_GYROSCOPE`)**: Measures angular velocity natively in $\text{rad/s}$, which identically matches the angular velocity units of the UCI HAR dataset.
+### 2.1 The Butterworth 0.3 Hz Low-Pass Filter
+The previous implementation used a simple single-pole IIR filter:
+$$y_t = \alpha y_{t-1} + (1 - \alpha) x_t \quad (\alpha = 0.8)$$
+At 50 Hz sampling rate, $\alpha = 0.8$ produces an effective cutoff frequency of:
+$$f_c = \frac{-\ln(0.8)}{2\pi \cdot 0.02} \approx 1.77\text{ Hz}$$
+Because normal human walking strides occur between $1.5\text{ Hz}$ and $2.5\text{ Hz}$, this filter treated cyclic walking steps as gravity, subtracting them from total acceleration and obliterating the walking waveform in `body_acc`.
 
-### 3.2 Sliding Window Buffer
-- **Sampling Frequency**: $50\text{ Hz}$ ($20\text{ ms}$ interval, registered with `SENSOR_DELAY_GAME` / `SENSOR_DELAY_FASTEST`).
-- **Window Length**: $128\text{ samples}$ ($2.56\text{ seconds}$).
-- **Overlap**: $50\%$ ($64\text{ samples} = 1.28\text{ seconds}$ stride).
-- **Channels**: 9 synchronized sensor channels formatted as a float array of shape `[1, 9, 128]`:
-  1. `total_acc_x` ($g$)
-  2. `total_acc_y` ($g$)
-  3. `total_acc_z` ($g$)
-  4. `body_acc_x` ($g$)
-  5. `body_acc_y` ($g$)
-  6. `body_acc_z` ($g$)
-  7. `body_gyro_x` ($\text{rad/s}$)
-  8. `body_gyro_y` ($\text{rad/s}$)
-  9. `body_gyro_z` ($\text{rad/s}$)
+### 2.2 The Exact 3rd-Order Butterworth Filter Implementation
+To match the exact signal processing pipeline of the original UCI HAR dataset, [`ButterworthFilter3rdOrder.kt`](file:///Users/kalagotlashivareddy/Downloads/human%20activity%20recognition/android/app/src/main/kotlin/com/motionsense/har/sensor/ButterworthFilter.kt) implements a 3rd-order low-pass Butterworth filter ($f_c = 0.3\text{ Hz}, f_s = 50\text{ Hz}$) using Direct Form II Transposed in 64-bit IEEE 754 `Double` precision:
+
+- **Filter Coefficients** (generated via `scipy.signal.butter(3, 0.3 / 25.0, btype='low')`):
+  $$b = [6.451849 \times 10^{-6}, 1.935555 \times 10^{-5}, 1.935555 \times 10^{-5}, 6.451849 \times 10^{-6}]$$
+  $$a = [1.0, -2.924606, 2.852028, -0.927370]$$
+- **Verification on UCI HAR Ground Truth**:
+  - $X$-axis correlation with original UCI HAR `body_acc_x`: **$0.9279$** ($\text{MAE} = 0.0117 g$).
+  - $Y$-axis correlation with original UCI HAR `body_acc_y`: **$0.9206$** ($\text{MAE} = 0.0119 g$).
+  - $Z$-axis correlation with original UCI HAR `body_acc_z`: **$0.9262$** ($\text{MAE} = 0.0095 g$).
+- **Instant DC Initialization**: The filter states ($w_1, w_2, w_3$) are initialized to the DC steady-state for the initial acceleration magnitude, eliminating startup transient settling time.
 
 ---
 
-## 4. Mobile Deep Learning Inference
+## 3. Phone Placement & Coordinate Alignment Layer
 
-### 4.1 On-Device ONNX Engine
-Models are embedded directly inside the Android application assets (`app/src/main/assets/models/`) and executed using `com.microsoft.onnxruntime:onnxruntime-android:1.17.0`.
+The app provides a runtime **Placement Selector** in [`PhonePlacement.kt`](file:///Users/kalagotlashivareddy/Downloads/human%20activity%20recognition/android/app/src/main/kotlin/com/motionsense/har/sensor/PhonePlacement.kt):
 
-### 4.2 Embedded Models & Parity Verification
-Both pre-trained PyTorch deep learning models were exported to ONNX format with strict numerical verification against the original PyTorch weights:
-
-| Model Architecture | Asset Name | File Size | Strict Subject-Independent Test Acc | Max Abs Diff (PyTorch vs ONNX) |
-|---|---|---|---|---|
-| **1D CNN** (Baseline) | `cnn_1d.onnx` | 434 KB | **93.99%** | $3.81 \times 10^{-6}$ (< 1e-4) |
-| **CNN-LSTM** (Primary) | `cnn_lstm.onnx` | 1,034 KB | **90.74%** | $3.22 \times 10^{-6}$ (< 1e-4) |
-
-*Note on Accuracies: In literature, randomly shuffled splits (with subject leakage across train and test) frequently report inflated accuracies of ~95%–96%. In contrast, MotionSense strictly enforces the official subject-independent benchmark protocol (unseen test subjects 2, 4, 9, 10, 12, 13, 18, 20, 24), yielding genuine, non-overfitted test accuracies of 93.99% (1D CNN) and 90.74% (CNN-LSTM).*
-
-*The maximum numerical difference between the PyTorch float32 model outputs and the on-device ONNX Runtime outputs across randomized and real test tensors is $< 4 \times 10^{-6}$, guaranteeing zero loss of classification fidelity.*
+| Placement Mode | Physical Phone Location | Sensor-to-Model Coordinate Transformation |
+|---|---|---|
+| **Front Pocket (Portrait)** *(Default)* | Vertical in front trouser pocket, top facing UP, screen facing thigh | $X_{\text{model}} = +Y_{\text{phone}}$ (Vertical Gravity)<br>$Y_{\text{model}} = -Z_{\text{phone}}$ (Forward Walk Direction)<br>$Z_{\text{model}} = +X_{\text{phone}}$ (Lateral Sway) |
+| **Waist Holster (UCI Native)** | Horizontally mounted on waist belt | $X_{\text{model}} = X_{\text{phone}}$<br>$Y_{\text{model}} = Y_{\text{phone}}$<br>$Z_{\text{model}} = Z_{\text{phone}}$ |
+| **Handheld (Portrait)** | Held in front of user while walking, tilted $\approx 30^\circ$ forward | $X_{\text{model}} = 0.866 Y - 0.500 Z$<br>$Y_{\text{model}} = -0.866 Z - 0.500 Y$<br>$Z_{\text{model}} = X_{\text{phone}}$ |
 
 ---
 
-## 5. Background Tracking & Battery Management
+## 4. Model Selection & Architecture Comparison
 
-### 5.1 Android Foreground Service
-Continuous activity tracking is managed by `MotionTrackingService`:
-- Registered with foreground service types: `health` and `dataSync`.
-- Displays a persistent, non-dismissible notification (`MotionSense Active`) showing the current recognized activity and live confidence score in real time.
-- Holds a `PowerManager.PARTIAL_WAKE_LOCK` to maintain sensor polling and model execution when the device is locked in a pocket.
-- Stops cleanly and releases all sensor listeners and wake locks when the user taps **Stop Tracking** in the UI.
+### Why 1D CNN is More Suitable for Mobile HAR than CNN-LSTM:
+1. **Accuracy on Unseen Test Subjects**:
+   - **1D CNN**: **$93.99\%$** ($2,770 / 2,947$ correct)
+   - **CNN-LSTM**: **$90.74\%$** ($2,674 / 2,947$ correct)
+   - *1D CNN achieves $+3.25\%$ higher overall accuracy on subject-independent testing.*
+2. **Computational Latency & Thermal Footprint**:
+   - **1D CNN**: Purely feed-forward 1D convolutions with Batch Normalization and Global Average Pooling. Measured inference latency on mobile CPU is $< 1.5\text{ ms}$.
+   - **CNN-LSTM**: Recurrent LSTM cells require sequential step-by-step unrolling across 128 timesteps, taking $4.5\text{ ms}$ to $8.0\text{ ms}$ on mobile CPU.
+3. **Binary Asset Footprint**:
+   - `cnn_1d.onnx`: **434 KB** (111,238 weights)
+   - `cnn_lstm.onnx`: **1,034 KB** (263,814 weights)
 
-### 5.2 Required Permissions
-Configured in `AndroidManifest.xml`:
-- `android.permission.ACTIVITY_RECOGNITION` (Android 10+)
-- `android.permission.FOREGROUND_SERVICE` (Android 9+)
-- `android.permission.FOREGROUND_SERVICE_HEALTH` (Android 14+)
-- `android.permission.FOREGROUND_SERVICE_DATA_SYNC` (Android 14+)
-- `android.permission.POST_NOTIFICATIONS` (Android 13+)
-- `android.permission.WAKE_LOCK`
-- `android.permission.HIGH_SAMPLING_RATE_SENSORS` (Android 12+ for 50 Hz polling)
+The application now defaults to **1D CNN**, while retaining the option to evaluate CNN-LSTM dynamically in the UI.
 
 ---
 
-## 6. Local SQLite Storage
+## 5. Temporal Smoothing & Prediction Stability
 
-The app stores every classified activity segment in a lightweight SQLite database (`MotionSenseDatabase`):
-- **Schema**:
-  - `id`: INTEGER PRIMARY KEY AUTOINCREMENT
-  - `timestamp`: INTEGER (epoch millis)
-  - `activity_name`: TEXT
-  - `confidence`: REAL
-  - `duration_seconds`: INTEGER
-  - `model_used`: TEXT
-  - `date_string`: TEXT (YYYY-MM-DD)
-- Delivered to Compose UI via Kotlin `Flow<List<ActivityRecord>>` with automatic updates on new predictions.
+To prevent erratic label flickering during physical transitions (e.g. stepping or brief pauses):
+1. **Rolling Majority Vote**: A 3-window circular history buffer evaluates the most frequent activity over the last $3.84\text{ seconds}$ ($3 \times 1.28\text{ s}$ stride).
+2. **Uncertainty Cutoff**: When top softmax probability $< 0.50$, the application displays **"Uncertain Motion"** rather than forcing a low-confidence guess.
 
 ---
 
-## 7. User Interface (Jetpack Compose & Material 3)
+## 6. Live Sensor & ML Diagnostics Mode (Phase 4)
 
-The native user interface provides 5 distinct screens accessible via a bottom navigation bar:
-
-1. **Live Activity (Home)**:
-   - High-contrast activity gauge with dynamic icons and category indicators (`Dynamic` vs `Static`).
-   - Confidence percentage meter with color-coded safety thresholds (>80% Green, 60-80% Blue, <60% Amber).
-   - Real-time 50 Hz sensor telemetry readout for 3-axis Accelerometer and 3-axis Gyroscope.
-   - Model switcher (toggle between **CNN-LSTM** and **1D CNN** with immediate on-device switching).
-   - One-tap **Start Tracking / Stop Tracking** FAB/Button.
-2. **Activity History**:
-   - Scrollable timeline of detected activity intervals with duration badges and timestamps.
-   - Clear History action with confirmation dialog.
-3. **Daily Activity Summary**:
-   - High-level metric cards: Total Active Time (Walking + Stairs) vs Total Sedentary Time (Sitting + Standing + Laying).
-   - Proportional duration progress bars for each of the 6 activities.
-4. **Model Information**:
-   - Technical specifications for both CNN-LSTM and 1D CNN models.
-   - Parameter counts, receptive fields, and UCI HAR benchmark performance metrics.
-5. **Settings & Diagnostics**:
-   - Real-time sensor hardware detection (vendor, power, resolution for Accelerometer and Gyroscope).
-   - Interactive permission check buttons (`Activity Recognition`, `Notifications`).
-   - Battery optimization whitelist instructions for uninterrupted long-term logging.
+A dedicated diagnostic overlay can be toggled on the Home screen:
+- **Telemetry Readout**: Real-time sampling rate (Hz), timestamp jitter (ms), missing samples count.
+- **Gravity & Body Acceleration**: Real-time display of separated gravitational ($g_x, g_y, g_z$) and body ($b_x, b_y, b_z$) components.
+- **Channel Min/Max**: Dynamic tracking of minimum and maximum amplitudes across all 9 input channels.
+- **Model Internals**: Real-time display of raw model logits and 6-class softmax probabilities with percentage bars.
+- **Diagnostic Window Export**: Tapping **"Save Diagnostic Window to File"** exports the active 128×9 float32 window as JSON to `Android/data/com.motionsense.har/files/diagnostics/` for inspection and Python parity validation.
 
 ---
 
-## 8. Artifacts & Installation
+## 7. APK Delivery & Direct Download Links
 
-### 8.1 Deliverable Files
-- **Debug APK**: `artifacts/apk/MotionSense-v1.0-debug.apk`
-- **Release APK**: `android/app/build/outputs/apk/release/app-release.apk`
-- **Export Script**: `scripts/export_models_for_mobile.py`
-- **Model Assets**: `android/app/src/main/assets/models/`
-- **Source Code**: `android/app/src/main/kotlin/com/motionsense/har/`
-
-### 8.2 Installation via ADB
-To install directly to a connected Android phone or emulator:
-```bash
-adb install -r artifacts/apk/MotionSense-v1.0-debug.apk
-```
-
-### 8.3 Manual Installation
-1. Transfer `MotionSense-v1.0-debug.apk` to your Android phone via USB, Google Drive, or local download.
-2. Tap the `.apk` file in your phone's File Manager and allow "Install from Unknown Sources".
-3. Open **MotionSense**, grant the Notification and Activity Recognition permissions, and tap **Start Tracking**.
-4. Move around (walk, climb stairs, sit, or lie down) to observe real-time classification.
+| Field | Debug APK | Release APK |
+|---|---|---|
+| **Direct Download URL** | [Download Debug APK](https://github.com/leelaprasad6629/human-activity-recognition/releases/download/v1.0.0-android/MotionSense-v1.0-debug.apk) | [Download Release APK](https://github.com/leelaprasad6629/human-activity-recognition/releases/download/v1.0.0-android/MotionSense-v1.0-release.apk) |
+| **GitHub Release** | [`v1.0.0-android`](https://github.com/leelaprasad6629/human-activity-recognition/releases/tag/v1.0.0-android) | [`v1.0.0-android`](https://github.com/leelaprasad6629/human-activity-recognition/releases/tag/v1.0.0-android) |
+| **Package ID** | `com.motionsense.har` | `com.motionsense.har` |
+| **Version** | `1.0` (Code: `1`) | `1.0` (Code: `1`) |
+| **File Size** | $82.53\text{ MB}$ | $75.47\text{ MB}$ |
+| **SHA-256 Checksum** | `b49d3d5d7e2e788c69ab3947e6c04c03e69b4963f7e20c4f595192a2065eee7a` | `1d135473a2a2c1a4e6b9863141a88396279ad2bfaf6181d54134317f6052d00e` |
+| **Signing Key** | Debug Keystore | Debug Keystore (Ready for device side-loading) |
