@@ -49,24 +49,60 @@ export const ActivityRecognitionPage: React.FC<ActivityRecognitionProps> = ({ mo
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const processSelectedFile = async (selected: File) => {
+    setFile(selected);
+    setError(null);
+    setPrediction(null);
+    setValidation(null);
+
+    // 1. Check for empty files (0 bytes)
+    if (selected.size === 0) {
+      const emptyError = 'The selected file is empty (0 bytes). Please upload a valid CSV file containing sensor recordings.';
+      setError(emptyError);
+      setValidation({
+        valid: false,
+        num_samples_or_windows: 0,
+        detected_channels_or_features: 0,
+        has_ground_truth: false,
+        errors: [emptyError],
+        warnings: []
+      });
+      return;
+    }
+
+    // 2. Validate file extension (.csv case-insensitive) without restricting on Android MIME type
+    const filename = selected.name || '';
+    if (!filename.toLowerCase().endsWith('.csv')) {
+      const extError = `Unsupported file type: "${filename}". Only CSV files (.csv) are supported.`;
+      setError(extError);
+      setValidation({
+        valid: false,
+        num_samples_or_windows: 0,
+        detected_channels_or_features: 0,
+        has_ground_truth: false,
+        errors: [extError],
+        warnings: []
+      });
+      return;
+    }
+
+    // 3. Validate contents via backend
+    await validateFile(selected);
+  };
+
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const selected = e.target.files[0];
-      setFile(selected);
-      setError(null);
-      setPrediction(null);
-      await validateFile(selected);
+      await processSelectedFile(selected);
     }
   };
 
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       const dropped = e.dataTransfer.files[0];
-      setFile(dropped);
-      setError(null);
-      setPrediction(null);
-      await validateFile(dropped);
+      await processSelectedFile(dropped);
     }
   };
 
@@ -75,13 +111,30 @@ export const ActivityRecognitionPage: React.FC<ActivityRecognitionProps> = ({ mo
     try {
       const result = await api.validateCSV(f);
       setValidation(result);
-      if (result.input_format === 'features') {
-        setSelectedModel('random_forest');
-      } else if (result.input_format === 'raw_inertial') {
-        setSelectedModel('cnn_lstm');
+      if (result.valid) {
+        if (result.input_format === 'features') {
+          setSelectedModel('random_forest');
+        } else if (result.input_format === 'raw_inertial') {
+          setSelectedModel('cnn_lstm');
+        }
+      } else {
+        if (result.errors && result.errors.length > 0) {
+          setError(result.errors.join('; '));
+        } else {
+          setError('CSV schema validation failed. Please check your columns.');
+        }
       }
     } catch (err: any) {
-      setError(err.message || 'Error validating file');
+      const msg = err.message || 'Error validating file';
+      setError(msg);
+      setValidation({
+        valid: false,
+        num_samples_or_windows: 0,
+        detected_channels_or_features: 0,
+        has_ground_truth: false,
+        errors: [msg],
+        warnings: []
+      });
     } finally {
       setIsValidating(false);
     }
@@ -145,38 +198,76 @@ export const ActivityRecognitionPage: React.FC<ActivityRecognitionProps> = ({ mo
             Supports Pipeline A (561 features) or Pipeline B (9 raw inertial signal channels).
           </p>
 
-          <div
-            onDragOver={(e) => e.preventDefault()}
+          <label
+            htmlFor="sensor-csv-upload-input"
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            onDragEnter={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
             onDrop={handleDrop}
-            onClick={() => fileInputRef.current?.click()}
-            className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${
+            className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all block select-none ${
               file
                 ? 'border-teal-500 bg-teal-50/20'
-                : 'border-slate-300 hover:border-teal-400 bg-slate-50/50 hover:bg-slate-50'
+                : 'border-slate-300 hover:border-teal-400 bg-slate-50/50 hover:bg-slate-50 active:bg-teal-50/10'
             }`}
           >
             <input
               type="file"
+              id="sensor-csv-upload-input"
               ref={fileInputRef}
               onChange={handleFileChange}
-              accept=".csv"
-              className="hidden"
+              onClick={(e) => {
+                // Clear input value to ensure re-selecting same file triggers onChange
+                (e.target as HTMLInputElement).value = '';
+              }}
+              accept=".csv,text/csv"
+              className="sr-only"
             />
             <div className="w-12 h-12 mx-auto rounded-full bg-teal-50 text-teal-600 flex items-center justify-center mb-3">
               <Upload className="w-6 h-6" />
             </div>
             {file ? (
               <div>
-                <p className="font-semibold text-sm text-slate-900">{file.name}</p>
-                <p className="text-xs text-slate-500 mt-1">{(file.size / 1024).toFixed(1)} KB &bull; Click to change</p>
+                <p className="font-semibold text-sm text-slate-900 break-all">{file.name}</p>
+                <div className="flex flex-wrap items-center justify-center gap-2 text-xs text-slate-500 mt-1.5">
+                  <span>{(file.size / 1024).toFixed(1)} KB</span>
+                  <span>&bull;</span>
+                  {isValidating ? (
+                    <span className="text-teal-600 font-semibold flex items-center gap-1">
+                      <RefreshCw className="w-3 h-3 animate-spin" />
+                      Validating...
+                    </span>
+                  ) : validation?.valid ? (
+                    <span className="text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                      ✓ Valid {validation.input_format === 'features' ? 'Pipeline A (Features)' : 'Pipeline B (Raw Signals)'}
+                    </span>
+                  ) : validation?.valid === false ? (
+                    <span className="text-rose-700 font-semibold bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200">
+                      ✗ Invalid Schema
+                    </span>
+                  ) : (
+                    <span>Ready</span>
+                  )}
+                  <span>&bull;</span>
+                  <span className="text-teal-600 underline font-medium">Tap to change</span>
+                </div>
               </div>
             ) : (
               <div>
-                <p className="font-semibold text-sm text-slate-800">Click to browse or drag and drop CSV</p>
-                <p className="text-xs text-slate-400 mt-1">Accepts CSV files with timestamps or raw signals</p>
+                <p className="font-semibold text-sm text-slate-800">Select or drop smartphone sensor CSV</p>
+                <p className="text-xs text-slate-400 mt-1">Supports Pipeline A (561 features) or Pipeline B (9 raw channels)</p>
+                <div className="mt-3">
+                  <span className="inline-flex items-center px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold shadow-xs transition-all pointer-events-none">
+                    Browse CSV Files
+                  </span>
+                </div>
               </div>
             )}
-          </div>
+          </label>
 
           {/* Validation Feedback */}
           {isValidating && (

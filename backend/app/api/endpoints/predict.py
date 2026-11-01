@@ -23,7 +23,8 @@ router = APIRouter()
 
 @router.post("/validate", response_model=ValidationResponse)
 async def validate_uploaded_csv(file: UploadFile = File(...)):
-    if not file.filename.endswith(".csv"):
+    filename = file.filename or ""
+    if not filename.lower().endswith(".csv"):
         return ValidationResponse(
             valid=False,
             num_samples_or_windows=0,
@@ -33,6 +34,15 @@ async def validate_uploaded_csv(file: UploadFile = File(...)):
         )
 
     content = await file.read()
+    if len(content) == 0:
+        return ValidationResponse(
+            valid=False,
+            num_samples_or_windows=0,
+            detected_channels_or_features=0,
+            has_ground_truth=False,
+            errors=["The uploaded CSV file is empty (0 bytes). Please upload a file containing sensor recordings."]
+        )
+
     try:
         df = pd.read_csv(io.BytesIO(content))
     except Exception as e:
