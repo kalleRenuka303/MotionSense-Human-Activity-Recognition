@@ -1,116 +1,82 @@
-# MotionSense — Native Android Application Technical Documentation & Bugfix Audit
+# MotionSense — Native Android Application Technical Documentation & Architecture
 
-## 1. Executive Summary & Critical Root Cause Analysis
+## 1. Executive Summary & Real-World Handheld Optimization
 
-During real-world physical smartphone testing of the initial native Android build, physical **WALKING** was consistently misclassified as **LAYING** with near 100% confidence. A thorough technical audit spanning dataset capture protocols, digital signal processing, coordinate systems, and neural network activations isolated the exact root cause:
+During real-world physical smartphone testing of the initial native Android build, physical **WALKING** was consistently misclassified as **LAYING** or confused with stairs when held vertically in the hand. A thorough technical audit spanning dataset capture protocols, digital signal processing, coordinate systems, and neural network activations isolated the exact root cause and delivered a robust solution:
 
-### The Root Cause: Spatial Coordinate Frame Inversion
+### 1.1 The Root Cause: Spatial Coordinate Frame Inversion
 1. **The Original UCI HAR Dataset Setup**:
    In the original UCI HAR experiments (Anguita et al.), subjects wore a smartphone mounted **horizontally on the waist** (in a horizontal belt holster).
    - In this waist-mounted landscape orientation, Earth's gravity vector ($\approx +1.0 g$) was aligned with the smartphone's **$X$-axis** for all upright activities:
      - `WALKING`: $\overline{a_x} = +0.9997 g, \sigma = 0.2269 g$
-     - `WALKING_UPSTAIRS`: $\overline{a_x} = +0.9494 g$
      - `STANDING`: $\overline{a_x} = +1.0014 g$
      - `SITTING`: $\overline{a_x} = +0.9508 g$
    - Conversely, the **only** activity in the entire UCI HAR dataset where gravity is absent from the $X$-axis is **LAYING**:
      - `LAYING`: $\overline{a_x} = +0.0717 g, \overline{a_y} = +0.6496 g, \overline{a_z} = +0.5605 g$
-2. **The Physical Android Phone Mismatch**:
-   When a user holds a smartphone in normal portrait mode or places it in a front trouser pocket (vertical, top facing up):
+2. **The Handheld Smartphone Mismatch**:
+   When a user holds a smartphone in vertical portrait mode:
    - Earth's gravity vector is aligned with Android's **$Y$-axis** ($a_y \approx +1.0 g$).
    - The lateral axis across the screen width is Android's **$X$-axis** ($a_x \approx 0.0 g$).
 3. **The Consequence**:
-   When the unaligned Android sensor readings were fed directly into the neural network:
-   - Channel 0 (`total_acc_x`) received $\approx 0.0 g$.
-   - Channel 1 (`total_acc_y`) received $\approx 1.0 g$.
-   - The neural network's trained convolutional filters interpreted $a_x \approx 0.0 g$ as conclusive evidence that the body is horizontal, immediately predicting **LAYING (100% confidence)**!
-4. **The Mathematical Verification**:
-   When tested on real UCI HAR test windows in Python:
-   - Normal waist orientation: 10/10 walking windows predict `WALKING (100.0%)`.
-   - Portrait orientation ($X \leftrightarrow Y$ unaligned): 10/10 walking windows predict `LAYING (100.0%)`.
-   - With the coordinate transformation layer applied: **10/10 walking windows predict `WALKING (100.0%)`**.
+   When the unaligned Android sensor readings were fed into the 6-class neural network, $a_x \approx 0.0 g$ triggered `LAYING` predictions with 100% confidence.
 
 ---
 
-## 2. Sensor Preprocessing & Butterworth Filter Fix
+## 2. Model Simplification & Rotation Invariance
 
-### 2.1 The Butterworth 0.3 Hz Low-Pass Filter
-The previous implementation used a simple single-pole IIR filter:
-$$y_t = \alpha y_{t-1} + (1 - \alpha) x_t \quad (\alpha = 0.8)$$
-At 50 Hz sampling rate, $\alpha = 0.8$ produces an effective cutoff frequency of:
-$$f_c = \frac{-\ln(0.8)}{2\pi \cdot 0.02} \approx 1.77\text{ Hz}$$
-Because normal human walking strides occur between $1.5\text{ Hz}$ and $2.5\text{ Hz}$, this filter treated cyclic walking steps as gravity, subtracting them from total acceleration and obliterating the walking waveform in `body_acc`.
+### 2.1 Rotation-Invariant 2-Class Model (`walking_binary.onnx`)
+To make activity recognition physically reliable for a phone held vertically or tilted arbitrarily in the user's hand, MotionSense features `walking_binary.onnx`:
+- **Classes**: `WALKING` vs `NOT_WALKING` (Stationary)
+- **Mathematical Invariance**: Operates on 3D Euclidean magnitude norms:
+  $$a_{\text{mag}} = \sqrt{a_x^2 + a_y^2 + a_z^2}, \quad a_{\text{body,mag}} = \sqrt{a_{\text{body},x}^2 + a_{\text{body},y}^2 + a_{\text{body},z}^2}, \quad \omega_{\text{mag}} = \sqrt{\omega_x^2 + \omega_y^2 + \omega_z^2}$$
+- **Test Set Accuracy**: **99.86%**
+- **Walking Recall**: **100.00%** (1,387 / 1,387 test windows)
+- **Walking Precision**: **99.71%**
+- **Inference Latency**: $< 0.5\text{ ms}$ on mobile CPU (11.0 KB model footprint).
 
-### 2.2 The Exact 3rd-Order Butterworth Filter Implementation
-To match the exact signal processing pipeline of the original UCI HAR dataset, [`ButterworthFilter3rdOrder.kt`](file:///Users/kalagotlashivareddy/Downloads/human%20activity%20recognition/android/app/src/main/kotlin/com/motionsense/har/sensor/ButterworthFilter.kt) implements a 3rd-order low-pass Butterworth filter ($f_c = 0.3\text{ Hz}, f_s = 50\text{ Hz}$) using Direct Form II Transposed in 64-bit IEEE 754 `Double` precision:
-
-- **Filter Coefficients** (generated via `scipy.signal.butter(3, 0.3 / 25.0, btype='low')`):
-  $$b = [6.451849 \times 10^{-6}, 1.935555 \times 10^{-5}, 1.935555 \times 10^{-5}, 6.451849 \times 10^{-6}]$$
-  $$a = [1.0, -2.924606, 2.852028, -0.927370]$$
-- **Verification on UCI HAR Ground Truth**:
-  - $X$-axis correlation with original UCI HAR `body_acc_x`: **$0.9279$** ($\text{MAE} = 0.0117 g$).
-  - $Y$-axis correlation with original UCI HAR `body_acc_y`: **$0.9206$** ($\text{MAE} = 0.0119 g$).
-  - $Z$-axis correlation with original UCI HAR `body_acc_z`: **$0.9262$** ($\text{MAE} = 0.0095 g$).
-- **Instant DC Initialization**: The filter states ($w_1, w_2, w_3$) are initialized to the DC steady-state for the initial acceleration magnitude, eliminating startup transient settling time.
+### 2.2 Physical Limitations of Handheld 3-Class Recognition (`three_class.onnx`)
+- When an inertial sensor is in the hand, sitting and standing are **physically indistinguishable**:
+  - The hand has no mechanical contact with chair or floor.
+  - Both postures exhibit identical gravity alignment ($a_y \approx +1g$) and stillness ($\sigma(a) < 0.015g$).
+- Model B (`three_class.onnx`) achieves 87.43% test accuracy on UCI HAR, but sitting recall drops to 42.4% due to confusion with standing.
+- Therefore, the 2-class model is recommended for handheld testing.
 
 ---
 
-## 3. Phone Placement & Coordinate Alignment Layer
+## 3. Sensor Preprocessing & Digital Butterworth Filter
 
-The app provides a runtime **Placement Selector** in [`PhonePlacement.kt`](file:///Users/kalagotlashivareddy/Downloads/human%20activity%20recognition/android/app/src/main/kotlin/com/motionsense/har/sensor/PhonePlacement.kt):
-
-| Placement Mode | Physical Phone Location | Sensor-to-Model Coordinate Transformation |
-|---|---|---|
-| **Front Pocket (Portrait)** *(Default)* | Vertical in front trouser pocket, top facing UP, screen facing thigh | $X_{\text{model}} = +Y_{\text{phone}}$ (Vertical Gravity)<br>$Y_{\text{model}} = -Z_{\text{phone}}$ (Forward Walk Direction)<br>$Z_{\text{model}} = +X_{\text{phone}}$ (Lateral Sway) |
-| **Waist Holster (UCI Native)** | Horizontally mounted on waist belt | $X_{\text{model}} = X_{\text{phone}}$<br>$Y_{\text{model}} = Y_{\text{phone}}$<br>$Z_{\text{model}} = Z_{\text{phone}}$ |
-| **Handheld (Portrait)** | Held in front of user while walking, tilted $\approx 30^\circ$ forward | $X_{\text{model}} = 0.866 Y - 0.500 Z$<br>$Y_{\text{model}} = -0.866 Z - 0.500 Y$<br>$Z_{\text{model}} = X_{\text{phone}}$ |
+### 3.1 Exact 3rd-Order Butterworth Low-Pass Filter
+[`ButterworthFilter.kt`](file:///Users/kalagotlashivareddy/Downloads/human%20activity%20recognition/android/app/src/main/kotlin/com/motionsense/har/sensor/ButterworthFilter.kt) implements a 3rd-order digital Butterworth filter ($f_c = 0.3\text{ Hz}, f_s = 50\text{ Hz}$) using Direct Form II Transposed in 64-bit precision:
+- **Correlation with UCI HAR ground truth**: $r > 0.92$ across all three axes.
+- **Attenuation at Walking Frequency (2 Hz)**: $> 90\%$ attenuation, preventing cyclic walking steps from corrupting the extracted gravity vector.
+- **Instant DC Initialization**: Eliminates initial transient filter warm-up delay.
 
 ---
 
-## 4. Model Selection & Architecture Comparison
+## 4. Sensor Data Recorder & Ground-Truth CSV Sessions
 
-### Why 1D CNN is More Suitable for Mobile HAR than CNN-LSTM:
-1. **Accuracy on Unseen Test Subjects**:
-   - **1D CNN**: **$93.99\%$** ($2,770 / 2,947$ correct)
-   - **CNN-LSTM**: **$90.74\%$** ($2,674 / 2,947$ correct)
-   - *1D CNN achieves $+3.25\%$ higher overall accuracy on subject-independent testing.*
-2. **Computational Latency & Thermal Footprint**:
-   - **1D CNN**: Purely feed-forward 1D convolutions with Batch Normalization and Global Average Pooling. Measured inference latency on mobile CPU is $< 1.5\text{ ms}$.
-   - **CNN-LSTM**: Recurrent LSTM cells require sequential step-by-step unrolling across 128 timesteps, taking $4.5\text{ ms}$ to $8.0\text{ ms}$ on mobile CPU.
-3. **Binary Asset Footprint**:
-   - `cnn_1d.onnx`: **434 KB** (111,238 weights)
-   - `cnn_lstm.onnx`: **1,034 KB** (263,814 weights)
-
-The application now defaults to **1D CNN**, while retaining the option to evaluate CNN-LSTM dynamically in the UI.
+[`SensorDataRecorder.kt`](file:///Users/kalagotlashivareddy/Downloads/human%20activity%20recognition/android/app/src/main/kotlin/com/motionsense/har/sensor/SensorDataRecorder.kt) enables recording physical sensor data directly on the device:
+- **Format**: Labelled CSV with header:
+  `timestamp_ns,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,sampling_rate_hz,orientation,activity_label`
+- **Supported Labels**: `WALKING`, `SITTING`, `STANDING`, `WALKING_UPSTAIRS`, `WALKING_DOWNSTAIRS`, `LAYING`.
+- **Export & Sharing**: Uses Android `FileProvider` to share CSV files via the native Android share sheet (Gmail, Drive, WhatsApp, etc.).
 
 ---
 
 ## 5. Temporal Smoothing & Prediction Stability
 
-To prevent erratic label flickering during physical transitions (e.g. stepping or brief pauses):
-1. **Rolling Majority Vote**: A 3-window circular history buffer evaluates the most frequent activity over the last $3.84\text{ seconds}$ ($3 \times 1.28\text{ s}$ stride).
-2. **Uncertainty Cutoff**: When top softmax probability $< 0.50$, the application displays **"Uncertain Motion"** rather than forcing a low-confidence guess.
+- **Rolling Majority Vote**: Evaluates predictions over a 3-window circular buffer ($3 \times 1.28\text{ s} \approx 3.84\text{ seconds}$).
+- **Calibrated Uncertainty Cutoff**: When top probability is $< 0.60$ for binary or $< 0.50$ for multi-class, the system displays **UNKNOWN ("Detecting...")** and resets history.
 
 ---
 
-## 6. Live Sensor & ML Diagnostics Mode (Phase 4)
-
-A dedicated diagnostic overlay can be toggled on the Home screen:
-- **Telemetry Readout**: Real-time sampling rate (Hz), timestamp jitter (ms), missing samples count.
-- **Gravity & Body Acceleration**: Real-time display of separated gravitational ($g_x, g_y, g_z$) and body ($b_x, b_y, b_z$) components.
-- **Channel Min/Max**: Dynamic tracking of minimum and maximum amplitudes across all 9 input channels.
-- **Model Internals**: Real-time display of raw model logits and 6-class softmax probabilities with percentage bars.
-- **Diagnostic Window Export**: Tapping **"Save Diagnostic Window to File"** exports the active 128×9 float32 window as JSON to `Android/data/com.motionsense.har/files/diagnostics/` for inspection and Python parity validation.
-
----
-
-## 7. APK Delivery & Direct Download Links
+## 6. APK Deliverables & Checksums
 
 | Field | Debug APK | Release APK |
 |---|---|---|
 | **Direct Download URL** | [Download Debug APK](https://github.com/leelaprasad6629/human-activity-recognition/releases/download/v1.0.0-android/MotionSense-v1.0-debug.apk) | [Download Release APK](https://github.com/leelaprasad6629/human-activity-recognition/releases/download/v1.0.0-android/MotionSense-v1.0-release.apk) |
-| **GitHub Release** | [`v1.0.0-android`](https://github.com/leelaprasad6629/human-activity-recognition/releases/tag/v1.0.0-android) | [`v1.0.0-android`](https://github.com/leelaprasad6629/human-activity-recognition/releases/tag/v1.0.0-android) |
 | **Package ID** | `com.motionsense.har` | `com.motionsense.har` |
 | **Version** | `1.0` (Code: `1`) | `1.0` (Code: `1`) |
-| **File Size** | $82.53\text{ MB}$ | $75.47\text{ MB}$ |
-| **SHA-256 Checksum** | `b49d3d5d7e2e788c69ab3947e6c04c03e69b4963f7e20c4f595192a2065eee7a` | `1d135473a2a2c1a4e6b9863141a88396279ad2bfaf6181d54134317f6052d00e` |
-| **Signing Key** | Debug Keystore | Debug Keystore (Ready for device side-loading) |
+| **File Size** | $82.53\text{ MB}$ | $75.49\text{ MB}$ |
+| **SHA-256 Checksum** | `6dc8c6cd3a8dac960943a1760748c783c57519a64c9bb295480c3ccfe57dec9f` | `b60598a78c58927c9e2ba366c0c235b82c0b1f9ffb3aa435d677a8c6da371f1b` |
+| **Signing Key** | Debug Keystore | Debug Keystore (Configured for direct side-loading) |
